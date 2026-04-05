@@ -9,28 +9,31 @@ os.makedirs('data/raw', exist_ok=True)
 # ALWAYS enable cache first
 fastf1.Cache.enable_cache('cache/')
 
-# What to download
-RACES = [
-    'Bahrain',        # Round 1 — clean baseline
-    'Saudi Arabia',   # Round 2 — street circuit, night race
-    'Australia',      # Round 3 — semi-street, high SC probability
-    'Monaco',         # Round 8 — extreme low speed
-    'Silverstone',    # Round 10 — highest speed corners
-    'Monza',          # Round 16 — highest straight speed
-    'Singapore',      # Round 18 — street circuit, high brake events
-    'Qatar',          # Round 19 — extreme tyre stress
-    'São Paulo',      # Round 21 — sprint weekend format
-    'Abu Dhabi',      # Round 24 — season finale, peak development
-]
-SESSIONS = ['R', 'Q']
+# Races and their available session types
+RACE_SESSIONS = {
+    'Australia':    ['R', 'Q'],           # Round 1  — season opener, semi-street, high SC probability
+    'Japan':        ['R', 'Q'],           # Round 3  — highest sustained high speed, unique S-curves
+    'Bahrain':      ['R', 'Q'],           # Round 4  — technical baseline, smooth asphalt
+    'Saudi Arabia': ['R', 'Q'],           # Round 5  — street circuit, night race, long straights
+    'Monaco':       ['R', 'Q'],           # Round 8  — extreme low speed, highest brake events
+    'Silverstone':  ['R', 'Q'],           # Round 12 — fastest corners, high sustained load
+    'Netherlands':  ['R', 'Q'],           # Round 15 — high banking, most aero demanding
+    'Monza':        ['R', 'Q'],           # Round 16 — highest straight speed, DRS dominant
+    'Baku':         ['R', 'Q'],           # Round 17 — longest straight, street circuit
+    'Singapore':    ['R', 'Q'],           # Round 18 — street circuit, extreme braking zones
+    'São Paulo':    ['R', 'Q', 'S'],      # Round 21 — sprint weekend, high altitude circuit
+    'Qatar':        ['R', 'Q', 'S'],      # Round 22 — sprint weekend, extreme tyre stress
+    'Abu Dhabi':    ['R', 'Q'],           # Round 24 — season finale, peak car development
+}
+
 TEAMS = {
     'Mercedes': 'mercedes',
     'Red Bull Racing': 'redbull'
 }
 YEAR = 2025
 
-for race in RACES:
-    for session_type in SESSIONS:
+for race, sessions in RACE_SESSIONS.items():
+    for session_type in sessions:
         try:
             print(f"\nLoading {race} {session_type}...")
             session = fastf1.get_session(YEAR, race, session_type)
