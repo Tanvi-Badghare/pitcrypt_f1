@@ -100,7 +100,7 @@ class SensorSimulator:
 
     def _load_thresholds(self) -> Dict:
         if not os.path.exists(THRESHOLDS_PATH):
-            logging.warning("thresholds.json not found — anomaly injection limited")
+            logging.warning("thresholds.json not found")
             return {}
 
         try:
@@ -197,8 +197,6 @@ class SensorSimulator:
         self._idx = 0
         logging.info("Stream reset")
 
-    # ── Properties ──────────────────────────────────────────────
-
     @property
     def total_frames(self) -> int:
         return self._total
@@ -210,3 +208,16 @@ class SensorSimulator:
     @property
     def progress(self) -> float:
         return round((self._idx / self._total) * 100, 2)
+
+
+# ── Self Test ─────────────────────────────────────────
+if __name__ == "__main__":
+    print("\n" + "="*50)
+    print("  SensorSimulator — Self Test")
+    print("="*50)
+
+    sim = SensorSimulator(team='mercedes', race='Bahrain', session='R')
+
+    for i in range(5):
+        frame = sim.get_next_frame()
+        print(f"\nFrame {i+1}: {frame}")
