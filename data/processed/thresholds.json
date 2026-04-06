@@ -1,0 +1,104 @@
+{
+  "mercedes": {
+    "Speed": {
+      "lower": 0,
+      "upper": 380,
+      "mean": 178.7337,
+      "std": 86.1091
+    },
+    "RPM": {
+      "lower": 1733.6475,
+      "upper": 15500,
+      "mean": 9484.6521,
+      "std": 2583.6682
+    },
+    "Throttle": {
+      "lower": 0,
+      "upper": 100,
+      "mean": 54.3416,
+      "std": 42.682
+    },
+    "Brake": {
+      "lower": 0,
+      "upper": 1,
+      "mean": 0.1802,
+      "std": 0.3844
+    },
+    "nGear": {
+      "lower": 0,
+      "upper": 8,
+      "mean": 4.5556,
+      "std": 2.275
+    },
+    "DRS": {
+      "lower": 0,
+      "upper": 14,
+      "mean": 2.9764,
+      "std": 4.0246
+    }
+  },
+  "redbull": {
+    "Speed": {
+      "lower": 0,
+      "upper": 380,
+      "mean": 163.1355,
+      "std": 96.0716
+    },
+    "RPM": {
+      "lower": 0,
+      "upper": 15500,
+      "mean": 8540.8455,
+      "std": 3617.043
+    },
+    "Throttle": {
+      "lower": 0,
+      "upper": 100,
+      "mean": 48.9202,
+      "std": 44.3822
+    },
+    "Brake": {
+      "lower": 0,
+      "upper": 1,
+      "mean": 0.1739,
+      "std": 0.379
+    },
+    "nGear": {
+      "lower": 0,
+      "upper": 8,
+      "mean": 4.0629,
+      "std": 2.4267
+    },
+    "DRS": {
+      "lower": 0,
+      "upper": 14,
+      "mean": 3.318,
+      "std": 4.0689
+    }
+  },
+  "combined": {
+    "Speed": {
+      "lower": 0,
+      "upper": 380
+    },
+    "RPM": {
+      "lower": 0,
+      "upper": 15500
+    },
+    "Throttle": {
+      "lower": 0,
+      "upper": 100
+    },
+    "Brake": {
+      "lower": 0,
+      "upper": 1
+    },
+    "nGear": {
+      "lower": 0,
+      "upper": 8
+    },
+    "DRS": {
+      "lower": 0,
+      "upper": 14
+    }
+  }
+}
