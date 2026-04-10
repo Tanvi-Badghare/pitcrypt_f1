@@ -1,0 +1,45 @@
+# PitCrypt-F1 — Relay Node Configuration
+
+node:
+  id: "relay_01"
+  type: "relay"
+
+network:
+  # Inbound — from car producers
+  listen_host: "0.0.0.0"
+  listen_port: 9001
+  protocol: "tcp"
+  max_connections: 10
+  timeout_seconds: 5
+
+  # Outbound — to validator
+  validator_host: "127.0.0.1"
+  validator_port: 9002
+
+crypto:
+  max_session_age_seconds: 300
+  max_packets_per_key: 10000
+  check_interval_seconds: 5
+
+anomaly:
+  enabled: true
+  thresholds_path: "data/processed/thresholds.json"
+  flag_action: "forward"       # forward flagged packets
+  reject_action: "drop"        # drop rejected packets
+  log_violations: true
+
+integrity:
+  check_sequence: true
+  check_timestamps: false
+  check_signatures: true
+  max_timestamp_age_ms: 30000  # 30 seconds
+  max_sequence_gap: 100
+
+logging:
+  level: "INFO"
+  log_to_file: true
+  log_file: "logs/relay_node.log"
+
+pipeline:
+  max_queue_size: 1000
+  worker_threads: 2
