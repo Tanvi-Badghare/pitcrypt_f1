@@ -2,7 +2,7 @@ import os
 import json
 import random
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Iterator, Dict, Any
 
 import pandas as pd
@@ -303,7 +303,7 @@ class SensorSimulator:
             'session':     str(row.get('Session',   self.session)),
             'lap':         int(row.get('LapNumber', 0)),
             'driver':      str(row.get('Driver',    'UNK')),
-            'timestamp':   datetime.utcnow().isoformat(),
+            'timestamp':   datetime.now(timezone.utc).isoformat(),
             'frame_index': self._idx,
         }
 
