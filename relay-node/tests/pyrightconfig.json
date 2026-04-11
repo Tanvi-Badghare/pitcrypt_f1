@@ -1,0 +1,25 @@
+{
+  "include": [
+    "car-producer/src",
+    "car-producer/tests",
+    "relay-node/src",
+    "relay-node/tests",
+    "validator-node/src",
+    "validator-node/tests",
+    "iam-module/src",
+    "iam-module/tests",
+    "forensic",
+    "simulations",
+    "benchmarks",
+    "dashboard"
+  ],
+  "extraPaths": [
+    "car-producer/src",
+    "relay-node/src",
+    "relay-node/tests",
+    "validator-node/src",
+    "iam-module/src"
+  ],
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic"
+}
