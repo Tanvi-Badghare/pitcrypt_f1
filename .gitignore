@@ -3,11 +3,16 @@ f1env/
 venv/
 env/
 
-# FastF1 cache — gigabytes of raw data
+# FastF1 cache
 cache/
+forensic/cache/
 
-# Raw telemetry CSVs — too large for GitHub
+# All raw and processed data — too large for GitHub
 data/raw/
+data/processed/
+data/anomalies/
+data/data/
+forensic/data/
 
 # Python
 __pycache__/
@@ -20,16 +25,19 @@ build/
 # Rust
 target/
 
-# Jupyter checkpoints
+# Jupyter
 .ipynb_checkpoints/
 
 # VS Code
 .vscode/
 
-# Environment variables
+# Environment
 .env
 *.env
 
-# OS files
+# OS
 .DS_Store
 Thumbs.db
+
+# Logs
+logs/
