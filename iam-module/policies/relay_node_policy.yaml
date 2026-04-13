@@ -1,0 +1,89 @@
+# PitCrypt-F1 — Relay Node IAM Policy
+# Defines permissions for the relay node
+
+policy:
+  name: "relay_node_policy"
+  version: "1.0"
+  description: >
+    Permissions for the relay node.
+    Relay may receive from cars, process, and forward to validator.
+    Relay cannot retain plaintext data or access audit logs.
+
+roles:
+  - name: "relay"
+    description: "Telemetry relay and re-encryption node"
+    nodes:
+      - "relay_01"
+      - "relay_02"
+
+permissions:
+  allow:
+    # Inbound from cars
+    - action: "telemetry.receive"
+      resource: "car_nodes"
+      description: "Receive encrypted packets from car nodes"
+
+    - action: "telemetry.decrypt"
+      resource: "car_packets"
+      description: "Decrypt packets from car nodes"
+
+    - action: "telemetry.reencrypt"
+      resource: "validator_packets"
+      description: "Re-encrypt packets for validator"
+
+    - action: "telemetry.forward"
+      resource: "validator_node"
+      description: "Forward re-encrypted packets to validator"
+
+    - action: "anomaly.filter"
+      resource: "telemetry_values"
+      description: "Run anomaly detection on plaintext values"
+
+    - action: "integrity.check"
+      resource: "packet_sequence"
+      description: "Check sequence and replay integrity"
+
+    - action: "key.exchange"
+      resource: "car_nodes"
+      description: "ECDH key exchange with car nodes"
+
+    - action: "key.exchange"
+      resource: "validator_node"
+      description: "ECDH key exchange with validator"
+
+    - action: "key.rotate"
+      resource: "own_sessions"
+      description: "Rotate session keys on schedule"
+
+  deny:
+    # Cannot retain plaintext
+    - action: "telemetry.store"
+      resource: "plaintext_data"
+      description: "Cannot store decrypted telemetry"
+
+    # Cannot impersonate car
+    - action: "telemetry.sign"
+      resource: "any_packets"
+      description: "Cannot sign packets as car node"
+
+    # Cannot read audit logs
+    - action: "audit.read"
+      resource: "audit_log"
+      description: "Cannot read validator audit logs"
+
+    # Cannot access validator keys
+    - action: "key.read"
+      resource: "validator_keys"
+      description: "Cannot access validator session keys"
+
+    # Cannot modify packet content
+    - action: "telemetry.modify"
+      resource: "packet_payload"
+      description: "Cannot modify packet payload content"
+
+constraints:
+  max_connections_per_car: 1
+  require_valid_session: true
+  forward_flagged_packets: true
+  drop_rejected_packets: true
+  ephemeral_plaintext: true      # Plaintext exists only during processing
