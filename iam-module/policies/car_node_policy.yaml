@@ -1,0 +1,77 @@
+# PitCrypt-F1 — Car Node IAM Policy
+# Defines permissions for Mercedes AMG and Red Bull car nodes
+
+policy:
+  name: "car_node_policy"
+  version: "1.0"
+  description: >
+    Permissions for Formula 1 car producer nodes.
+    Car nodes may only produce and transmit telemetry.
+    They cannot read other nodes' data or access validator.
+
+roles:
+  - name: "car_producer"
+    description: "F1 car telemetry producer node"
+    nodes:
+      - "mercedes_car"
+      - "redbull_car"
+
+permissions:
+  allow:
+    # Telemetry production
+    - action: "telemetry.produce"
+      resource: "own_telemetry"
+      description: "Produce own telemetry packets"
+
+    - action: "telemetry.sign"
+      resource: "own_packets"
+      description: "Sign own packets with Ed25519 key"
+
+    - action: "telemetry.encrypt"
+      resource: "own_packets"
+      description: "Encrypt own packets with session key"
+
+    - action: "key.exchange"
+      resource: "relay_node"
+      description: "Perform ECDH key exchange with relay"
+
+    - action: "key.rotate"
+      resource: "own_session"
+      description: "Rotate own session keys"
+
+    - action: "network.transmit"
+      resource: "relay_node"
+      description: "Transmit packets to assigned relay only"
+
+  deny:
+    # Cannot read other teams' data
+    - action: "telemetry.read"
+      resource: "other_team_telemetry"
+      description: "Cannot read other team's telemetry"
+
+    # Cannot contact validator directly
+    - action: "network.transmit"
+      resource: "validator_node"
+      description: "Cannot transmit directly to validator"
+
+    # Cannot access relay internals
+    - action: "relay.configure"
+      resource: "relay_node"
+      description: "Cannot configure relay node"
+
+    # Cannot read audit logs
+    - action: "audit.read"
+      resource: "audit_log"
+      description: "Cannot read audit logs"
+
+    # Cannot access other car's keys
+    - action: "key.read"
+      resource: "other_node_keys"
+      description: "Cannot access other nodes' keys"
+
+constraints:
+  max_packet_rate_hz: 150        # Max 150 packets per second
+  allowed_sessions: ["R", "Q", "S"]
+  allowed_teams: ["mercedes", "redbull"]
+  require_signature: true
+  require_encryption: true
