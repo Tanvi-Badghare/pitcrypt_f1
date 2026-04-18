@@ -1,0 +1,47 @@
+# PitCrypt-F1 — FIA Validator Node Configuration
+
+node:
+  id: "fia_validator"
+  type: "validator"
+
+network:
+  # Inbound — from relay node
+  listen_host: "0.0.0.0"
+  listen_port: 9002
+  protocol: "tcp"
+  max_connections: 5
+  timeout_seconds: 10
+
+crypto:
+  max_session_age_seconds: 300
+  max_packets_per_key: 10000
+
+signature:
+  enabled: true
+  reject_unknown_nodes: true
+  reject_invalid_signatures: true
+
+sequence:
+  check_sequence: true
+  check_timestamps: false
+  strict_ordering: true
+  max_timestamp_age_ms: 60000
+  max_sequence_gap: 1000
+
+zkp:
+  enabled: true
+  skip_if_missing: true          # Allow packets without commitment
+  mode: "hash"                   # hash or pedersen (Rust module)
+
+audit:
+  log_to_file: true
+  log_file: "logs/validator_audit.jsonl"
+  alert_on_reject: true
+
+logging:
+  level: "INFO"
+  log_to_file: true
+  log_file: "logs/validator_node.log"
+
+pipeline:
+  max_queue_size: 500
