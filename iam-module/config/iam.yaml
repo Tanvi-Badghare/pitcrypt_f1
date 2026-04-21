@@ -1,0 +1,39 @@
+# PitCrypt-F1 — IAM Module Configuration
+
+iam:
+  version: "1.0"
+  enforcement_mode: "strict"
+  log_all_decisions: true
+  alert_on_violation: true
+
+  nodes:
+    mercedes_car:
+      role:   "car_producer"
+      team:   "mercedes"
+      policy: "car_node_policy"
+
+    redbull_car:
+      role:   "car_producer"
+      team:   "redbull"
+      policy: "car_node_policy"
+
+    relay_01:
+      role:   "relay"
+      policy: "relay_node_policy"
+
+    relay_02:
+      role:   "relay"
+      policy: "relay_node_policy"
+
+    fia_validator:
+      role:   "fia_validator"
+      policy: "validator_node_policy"
+
+policies:
+  car_node:   "iam-module/policies/car_node_policy.yaml"
+  relay_node: "iam-module/policies/relay_node_policy.yaml"
+  validator:  "iam-module/policies/validator_node_policy.yaml"
+
+logging:
+  level: "INFO"
+  log_file: "logs/iam_audit.log"
