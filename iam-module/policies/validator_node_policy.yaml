@@ -1,0 +1,95 @@
+# PitCrypt-F1 — Validator Node IAM Policy
+# Defines permissions for the FIA validator node
+
+policy:
+  name: "validator_node_policy"
+  version: "1.0"
+  description: >
+    Permissions for the FIA validator node.
+    Validator is the authoritative endpoint.
+    It may verify, accept/reject, and log all packets.
+    It cannot produce or modify telemetry.
+
+roles:
+  - name: "fia_validator"
+    description: "FIA authoritative telemetry validator"
+    nodes:
+      - "fia_validator"
+      - "validator_01"
+
+permissions:
+  allow:
+    # Receive from relay
+    - action: "telemetry.receive"
+      resource: "relay_node"
+      description: "Receive re-encrypted packets from relay"
+
+    - action: "telemetry.decrypt"
+      resource: "relay_packets"
+      description: "Decrypt relay → validator leg"
+
+    # Verification
+    - action: "signature.verify"
+      resource: "all_packets"
+      description: "Verify Ed25519 signatures on all packets"
+
+    - action: "sequence.verify"
+      resource: "all_packets"
+      description: "Verify sequence ordering and replay"
+
+    - action: "zkp.verify"
+      resource: "all_packets"
+      description: "Verify ZKP commitments"
+
+    # Decisions
+    - action: "packet.accept"
+      resource: "verified_packets"
+      description: "Accept packets that pass all checks"
+
+    - action: "packet.reject"
+      resource: "invalid_packets"
+      description: "Reject packets that fail any check"
+
+    # Audit
+    - action: "audit.write"
+      resource: "audit_log"
+      description: "Write all decisions to audit log"
+
+    - action: "audit.read"
+      resource: "audit_log"
+      description: "Read own audit log for reporting"
+
+    - action: "audit.export"
+      resource: "audit_log"
+      description: "Export audit log for FIA review"
+
+    # Key management
+    - action: "key.exchange"
+      resource: "relay_node"
+      description: "ECDH key exchange with relay"
+
+    - action: "node.register"
+      resource: "car_nodes"
+      description: "Register authorised car node public keys"
+
+  deny:
+    # Cannot produce telemetry
+    - action: "telemetry.produce"
+      resource: "any"
+      description: "Cannot produce telemetry packets"
+
+    # Cannot modify packets
+    - action: "telemetry.modify"
+      resource: "any_packets"
+      description: "Cannot modify any packet content"
+
+    # Cannot contact cars directly
+    - action: "network.transmit"
+      resource: "car_nodes"
+      description: "Cannot contact car nodes directly"
+
+constraints:
+  require_all_checks_pass: true
+  immutable_audit_log: true
+  alert_on_reject: true
+  max_accepted_per_second: 200
