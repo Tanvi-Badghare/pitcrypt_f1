@@ -1,0 +1,8 @@
+attack,layer,detected,detection_point,reason
+payload_bit_flip,relay_aead,True,relay,aead_tag_failed
+speed_injection,validator_signature,True,validator,signature_failed: Invalid Ed25519 signature from node 'mercedes_car'. Packet may have been tampered with.
+signature_stripping,validator_signature,True,validator,signature_failed: Packet from 'mercedes_car' has no signature.
+zkp_commitment_tamper,validator_zkp,True,validator,commitment_mismatch
+header_aead_tamper,relay_aead,True,relay,aead_tag_failed
+wrong_signature,validator_signature,True,validator,signature_failed: Invalid Ed25519 signature from node 'mercedes_car'. Packet may have been tampered with.
+multi_layer_tamper,,True,relay,

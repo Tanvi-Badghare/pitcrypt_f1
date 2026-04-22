@@ -1,0 +1,42 @@
+{
+  "simulation": "replay_attack",
+  "timestamp": "2026-04-22T14:18:22.129483+00:00",
+  "total": 5,
+  "detected": 4,
+  "elapsed_s": 0.04,
+  "results": [
+    {
+      "attack": "simple_replay",
+      "legitimate_passed": true,
+      "relay_detected": true,
+      "validator_detected": true,
+      "detected": true
+    },
+    {
+      "attack": "sequence_manipulation",
+      "sequence": 2,
+      "detected": true,
+      "reason": "sequence_failed"
+    },
+    {
+      "attack": "batch_replay",
+      "packets_replayed": 5,
+      "detected_count": 5,
+      "all_detected": true
+    },
+    {
+      "attack": "delayed_replay",
+      "detected": true,
+      "reason": "sequence_failed"
+    },
+    {
+      "attack": "sequence_increment",
+      "detected": false,
+      "stages": {
+        "signature": "PASS",
+        "sequence": "PASS",
+        "zkp": "PASS"
+      }
+    }
+  ]
+}

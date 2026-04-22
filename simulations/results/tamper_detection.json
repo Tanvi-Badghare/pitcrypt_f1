@@ -1,0 +1,62 @@
+{
+  "simulation": "tampering_attack",
+  "timestamp": "2026-04-22T14:20:11.211643+00:00",
+  "total": 7,
+  "detected": 7,
+  "elapsed_s": 0.01,
+  "results": [
+    {
+      "attack": "payload_bit_flip",
+      "layer": "relay_aead",
+      "detected": true,
+      "reason": "aead_tag_failed",
+      "detection_point": "relay"
+    },
+    {
+      "attack": "speed_injection",
+      "layer": "validator_signature",
+      "original_speed": 34.0,
+      "detected": true,
+      "reason": "signature_failed: Invalid Ed25519 signature from node 'mercedes_car'. Packet may have been tampered with.",
+      "detection_point": "validator"
+    },
+    {
+      "attack": "signature_stripping",
+      "layer": "validator_signature",
+      "detected": true,
+      "reason": "signature_failed: Packet from 'mercedes_car' has no signature.",
+      "detection_point": "validator"
+    },
+    {
+      "attack": "zkp_commitment_tamper",
+      "layer": "validator_zkp",
+      "detected": true,
+      "reason": "commitment_mismatch",
+      "detection_point": "validator"
+    },
+    {
+      "attack": "header_aead_tamper",
+      "layer": "relay_aead",
+      "detected": true,
+      "reason": "aead_tag_failed",
+      "detection_point": "relay"
+    },
+    {
+      "attack": "wrong_signature",
+      "layer": "validator_signature",
+      "detected": true,
+      "reason": "signature_failed: Invalid Ed25519 signature from node 'mercedes_car'. Packet may have been tampered with.",
+      "detection_point": "validator"
+    },
+    {
+      "attack": "multi_layer_tamper",
+      "layers": [
+        "ciphertext",
+        "signature"
+      ],
+      "detected": true,
+      "detection_point": "relay",
+      "relay_detected": true
+    }
+  ]
+}
