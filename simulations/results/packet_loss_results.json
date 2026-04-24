@@ -1,0 +1,109 @@
+{
+  "simulation": "packet_loss",
+  "timestamp": "2026-04-23T11:21:22.558979+00:00",
+  "elapsed_s": 0.42,
+  "results": [
+    {
+      "scenario": "random_loss",
+      "results": [
+        {
+          "configured_loss_pct": 5,
+          "sent": 50,
+          "dropped": 5,
+          "accepted": 45,
+          "gaps_detected": 0,
+          "actual_rate": 0.1
+        },
+        {
+          "configured_loss_pct": 10,
+          "sent": 50,
+          "dropped": 4,
+          "accepted": 46,
+          "gaps_detected": 0,
+          "actual_rate": 0.08
+        },
+        {
+          "configured_loss_pct": 20,
+          "sent": 50,
+          "dropped": 10,
+          "accepted": 40,
+          "gaps_detected": 0,
+          "actual_rate": 0.2
+        }
+      ]
+    },
+    {
+      "scenario": "burst_loss",
+      "results": [
+        {
+          "burst_size": 3,
+          "dropped": 3,
+          "accepted": 27,
+          "gaps_detected": 1,
+          "recovered": true
+        },
+        {
+          "burst_size": 5,
+          "dropped": 5,
+          "accepted": 25,
+          "gaps_detected": 1,
+          "recovered": true
+        },
+        {
+          "burst_size": 10,
+          "dropped": 10,
+          "accepted": 20,
+          "gaps_detected": 1,
+          "recovered": true
+        }
+      ]
+    },
+    {
+      "scenario": "selective_loss",
+      "drop_indices": [
+        3,
+        12,
+        7,
+        15
+      ],
+      "dropped": 4,
+      "accepted": 16,
+      "gaps_detected": 0,
+      "recovered": true
+    },
+    {
+      "scenario": "recovery",
+      "phases": [
+        {
+          "phase": "normal",
+          "sent": 10,
+          "dropped": 0,
+          "accepted": 10
+        },
+        {
+          "phase": "loss",
+          "sent": 10,
+          "dropped": 10,
+          "accepted": 0
+        },
+        {
+          "phase": "recovery",
+          "sent": 10,
+          "dropped": 0,
+          "accepted": 10
+        }
+      ],
+      "recovered": true
+    },
+    {
+      "scenario": "high_load_loss",
+      "n_packets": 100,
+      "loss_rate": 0.05,
+      "dropped": 1,
+      "accepted": 99,
+      "accept_rate": 0.99,
+      "pkt_per_sec": 1061.7,
+      "elapsed_s": 0.094
+    }
+  ]
+}

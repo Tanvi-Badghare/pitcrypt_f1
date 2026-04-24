@@ -1,0 +1,338 @@
+{
+  "simulation": "iam_breach",
+  "timestamp": "2026-04-23T11:20:54.250248+00:00",
+  "total": 7,
+  "defended": 7,
+  "elapsed_s": 0.03,
+  "audit_summary": {
+    "total": 38,
+    "allowed": 0,
+    "denied": 38,
+    "alerts": 26
+  },
+  "results": [
+    {
+      "attack": "unknown_node_access",
+      "attempts": 4,
+      "blocked": 4,
+      "all_blocked": true,
+      "details": [
+        {
+          "node_id": "unknown_attacker",
+          "action": "telemetry.read",
+          "resource": "all_telemetry",
+          "allowed": false,
+          "reason": "node_not_registered"
+        },
+        {
+          "node_id": "rouge_car_99",
+          "action": "network.transmit",
+          "resource": "validator_node",
+          "allowed": false,
+          "reason": "node_not_registered"
+        },
+        {
+          "node_id": "mystery_node",
+          "action": "audit.read",
+          "resource": "audit_log",
+          "allowed": false,
+          "reason": "node_not_registered"
+        },
+        {
+          "node_id": "fake_relay",
+          "action": "telemetry.decrypt",
+          "resource": "car_packets",
+          "allowed": false,
+          "reason": "node_not_registered"
+        }
+      ]
+    },
+    {
+      "attack": "cross_team_access",
+      "attempts": 4,
+      "blocked": 4,
+      "all_blocked": true,
+      "details": [
+        {
+          "node_id": "mercedes_car",
+          "action": "telemetry.read",
+          "resource": "other_team_telemetry",
+          "allowed": false,
+          "reason": "policy_deny"
+        },
+        {
+          "node_id": "redbull_car",
+          "action": "telemetry.read",
+          "resource": "other_team_telemetry",
+          "allowed": false,
+          "reason": "policy_deny"
+        },
+        {
+          "node_id": "mercedes_car",
+          "action": "key.read",
+          "resource": "other_node_keys",
+          "allowed": false,
+          "reason": "policy_deny"
+        },
+        {
+          "node_id": "redbull_car",
+          "action": "key.read",
+          "resource": "other_node_keys",
+          "allowed": false,
+          "reason": "policy_deny"
+        }
+      ]
+    },
+    {
+      "attack": "car_validator_bypass",
+      "attempts": 4,
+      "blocked": 4,
+      "all_blocked": true,
+      "details": [
+        {
+          "node_id": "mercedes_car",
+          "action": "network.transmit",
+          "resource": "validator_node",
+          "allowed": false,
+          "reason": "policy_deny"
+        },
+        {
+          "node_id": "redbull_car",
+          "action": "network.transmit",
+          "resource": "validator_node",
+          "allowed": false,
+          "reason": "policy_deny"
+        },
+        {
+          "node_id": "mercedes_car",
+          "action": "signature.verify",
+          "resource": "all_packets",
+          "allowed": false,
+          "reason": "policy_deny"
+        },
+        {
+          "node_id": "mercedes_car",
+          "action": "audit.write",
+          "resource": "audit_log",
+          "allowed": false,
+          "reason": "policy_deny"
+        }
+      ]
+    },
+    {
+      "attack": "relay_impersonation",
+      "attempts": 4,
+      "blocked": 4,
+      "all_blocked": true,
+      "details": [
+        {
+          "node_id": "mercedes_car",
+          "action": "telemetry.reencrypt",
+          "resource": "validator_packets",
+          "allowed": false,
+          "reason": "policy_deny"
+        },
+        {
+          "node_id": "mercedes_car",
+          "action": "telemetry.forward",
+          "resource": "validator_node",
+          "allowed": false,
+          "reason": "policy_deny"
+        },
+        {
+          "node_id": "mercedes_car",
+          "action": "anomaly.filter",
+          "resource": "telemetry_values",
+          "allowed": false,
+          "reason": "policy_deny"
+        },
+        {
+          "node_id": "mercedes_car",
+          "action": "integrity.check",
+          "resource": "packet_sequence",
+          "allowed": false,
+          "reason": "policy_deny"
+        }
+      ]
+    },
+    {
+      "attack": "privilege_escalation",
+      "attempts": 8,
+      "blocked": 8,
+      "all_blocked": true,
+      "details": [
+        {
+          "node_id": "mercedes_car",
+          "action": "signature.verify",
+          "resource": "all_packets",
+          "allowed": false,
+          "reason": "policy_deny"
+        },
+        {
+          "node_id": "mercedes_car",
+          "action": "zkp.verify",
+          "resource": "all_packets",
+          "allowed": false,
+          "reason": "policy_deny"
+        },
+        {
+          "node_id": "mercedes_car",
+          "action": "packet.accept",
+          "resource": "verified_packets",
+          "allowed": false,
+          "reason": "policy_deny"
+        },
+        {
+          "node_id": "mercedes_car",
+          "action": "packet.reject",
+          "resource": "invalid_packets",
+          "allowed": false,
+          "reason": "policy_deny"
+        },
+        {
+          "node_id": "relay_01",
+          "action": "signature.verify",
+          "resource": "all_packets",
+          "allowed": false,
+          "reason": "policy_deny"
+        },
+        {
+          "node_id": "relay_01",
+          "action": "zkp.verify",
+          "resource": "all_packets",
+          "allowed": false,
+          "reason": "policy_deny"
+        },
+        {
+          "node_id": "relay_01",
+          "action": "audit.write",
+          "resource": "audit_log",
+          "allowed": false,
+          "reason": "policy_deny"
+        },
+        {
+          "node_id": "relay_01",
+          "action": "node.register",
+          "resource": "car_nodes",
+          "allowed": false,
+          "reason": "policy_deny"
+        }
+      ]
+    },
+    {
+      "attack": "audit_log_tampering",
+      "attempts": 6,
+      "blocked": 6,
+      "all_blocked": true,
+      "details": [
+        {
+          "node_id": "relay_01",
+          "action": "audit.read",
+          "resource": "audit_log",
+          "allowed": false,
+          "reason": "policy_deny"
+        },
+        {
+          "node_id": "relay_01",
+          "action": "audit.write",
+          "resource": "audit_log",
+          "allowed": false,
+          "reason": "policy_deny"
+        },
+        {
+          "node_id": "relay_01",
+          "action": "audit.export",
+          "resource": "audit_log",
+          "allowed": false,
+          "reason": "policy_deny"
+        },
+        {
+          "node_id": "mercedes_car",
+          "action": "audit.read",
+          "resource": "audit_log",
+          "allowed": false,
+          "reason": "policy_deny"
+        },
+        {
+          "node_id": "mercedes_car",
+          "action": "audit.write",
+          "resource": "audit_log",
+          "allowed": false,
+          "reason": "policy_deny"
+        },
+        {
+          "node_id": "redbull_car",
+          "action": "audit.read",
+          "resource": "audit_log",
+          "allowed": false,
+          "reason": "policy_deny"
+        }
+      ]
+    },
+    {
+      "attack": "denial_storm",
+      "probes": 8,
+      "all_denied": true,
+      "alert_fired": true,
+      "alert_count": 26,
+      "details": [
+        {
+          "node_id": "probing_attacker",
+          "action": "telemetry.read",
+          "resource": "any",
+          "allowed": false,
+          "reason": "node_not_registered"
+        },
+        {
+          "node_id": "probing_attacker",
+          "action": "telemetry.write",
+          "resource": "any",
+          "allowed": false,
+          "reason": "node_not_registered"
+        },
+        {
+          "node_id": "probing_attacker",
+          "action": "audit.read",
+          "resource": "any",
+          "allowed": false,
+          "reason": "node_not_registered"
+        },
+        {
+          "node_id": "probing_attacker",
+          "action": "key.read",
+          "resource": "any",
+          "allowed": false,
+          "reason": "node_not_registered"
+        },
+        {
+          "node_id": "probing_attacker",
+          "action": "network.transmit",
+          "resource": "any",
+          "allowed": false,
+          "reason": "node_not_registered"
+        },
+        {
+          "node_id": "probing_attacker",
+          "action": "signature.forge",
+          "resource": "any",
+          "allowed": false,
+          "reason": "node_not_registered"
+        },
+        {
+          "node_id": "probing_attacker",
+          "action": "packet.inject",
+          "resource": "any",
+          "allowed": false,
+          "reason": "node_not_registered"
+        },
+        {
+          "node_id": "probing_attacker",
+          "action": "session.hijack",
+          "resource": "any",
+          "allowed": false,
+          "reason": "node_not_registered"
+        }
+      ]
+    }
+  ]
+}

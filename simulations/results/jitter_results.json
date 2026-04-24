@@ -1,0 +1,84 @@
+{
+  "simulation": "jitter",
+  "timestamp": "2026-04-23T11:21:52.806942+00:00",
+  "elapsed_s": 0.19,
+  "results": [
+    {
+      "scenario": "low_jitter",
+      "window": 2,
+      "n_packets": 30,
+      "accepted": 17,
+      "rejected": 13,
+      "latency": {
+        "mean_ms": 0.716,
+        "median_ms": 0.606,
+        "min_ms": 0.379,
+        "max_ms": 2.674,
+        "p95_ms": 1.195,
+        "p99_ms": 2.674,
+        "stdev_ms": 0.409
+      }
+    },
+    {
+      "scenario": "medium_jitter",
+      "window": 5,
+      "n_packets": 30,
+      "accepted": 11,
+      "rejected": 19,
+      "latency": {
+        "mean_ms": 0.64,
+        "median_ms": 0.652,
+        "min_ms": 0.402,
+        "max_ms": 0.858,
+        "p95_ms": 0.836,
+        "p99_ms": 0.858,
+        "stdev_ms": 0.129
+      }
+    },
+    {
+      "scenario": "high_jitter",
+      "window": 10,
+      "n_packets": 30,
+      "accepted": 10,
+      "rejected": 20,
+      "latency": {
+        "mean_ms": 0.651,
+        "median_ms": 0.653,
+        "min_ms": 0.339,
+        "max_ms": 1.371,
+        "p95_ms": 1.074,
+        "p99_ms": 1.371,
+        "stdev_ms": 0.232
+      }
+    },
+    {
+      "scenario": "crypto_latency",
+      "n_packets": 50,
+      "latency": {
+        "mean_ms": 0.482,
+        "median_ms": 0.412,
+        "min_ms": 0.342,
+        "max_ms": 1.052,
+        "p95_ms": 0.782,
+        "p99_ms": 1.052,
+        "stdev_ms": 0.159
+      },
+      "throughput": 2076.7
+    },
+    {
+      "scenario": "no_jitter_baseline",
+      "n_packets": 50,
+      "accepted": 50,
+      "throughput": 1045.9,
+      "latency": {
+        "mean_ms": 0.65,
+        "median_ms": 0.582,
+        "min_ms": 0.41,
+        "max_ms": 1.107,
+        "p95_ms": 1.009,
+        "p99_ms": 1.107,
+        "stdev_ms": 0.178
+      }
+    }
+  ]
+}
