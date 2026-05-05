@@ -40,11 +40,16 @@ Run with:
 """
 
 # ── Page config ───────────────────────────────────────────────────
+from PIL import Image
+
+favicon = Image.open(
+    os.path.join(ROOT, 'dashboard', 'assets', 'favicon.png')
+)
+
 st.set_page_config(
     page_title="PitCrypt-F1 Security Dashboard",
-    page_icon="🏎️",
+    page_icon=favicon,
     layout="wide",
-    initial_sidebar_state="expanded",
 )
 
 # ── Custom CSS ────────────────────────────────────────────────────
