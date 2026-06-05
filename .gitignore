@@ -40,4 +40,6 @@ target/
 Thumbs.db
 
 # Logs
-logs/
+logs/logs/
+logs/*.jsonl
+logs/*.log
