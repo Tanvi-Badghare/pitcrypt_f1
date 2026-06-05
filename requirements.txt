@@ -1,0 +1,16 @@
+cat > requirements.txt << 'EOF'
+# PitCrypt-F1 — Root Requirements
+cryptography>=41.0.0
+pynacl>=1.5.0
+pyyaml>=6.0
+pandas>=2.0.0
+numpy>=1.24.0
+fastf1>=3.3.0
+matplotlib>=3.7.0
+pytest>=7.4.0
+python-dateutil>=2.8.2
+EOF
+
+git add requirements.txt
+git commit -m "chore: add root requirements.txt"
+git push origin main
