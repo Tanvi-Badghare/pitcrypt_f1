@@ -1,9 +1,9 @@
 {
   "simulation": "replay_attack",
-  "timestamp": "2026-04-23T11:20:47.585629+00:00",
+  "timestamp": "2026-06-11T13:12:29.353569+00:00",
   "total": 5,
   "detected": 4,
-  "elapsed_s": 0.04,
+  "elapsed_s": 0.03,
   "results": [
     {
       "attack": "simple_replay",
