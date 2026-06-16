@@ -20,6 +20,9 @@ PACKET_TYPE_TEL = 0x01
 TEAM_IDS = {
     'mercedes': 0x01,
     'redbull':  0x02,
+    'ferrari':  0x03,
+    'mclaren':  0x04,
+    'williams': 0x05,
 }
 
 SESSION_IDS = {
