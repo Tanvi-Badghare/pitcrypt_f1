@@ -27,7 +27,7 @@ THRESHOLDS_PATH = os.path.join(PROCESSED_DIR, 'thresholds.json')
 # ── Constants ────────────────────────────────────────────────────
 CHANNELS = ['Speed', 'RPM', 'Throttle', 'Brake', 'nGear', 'DRS']
 
-VALID_TEAMS    = ['mercedes', 'redbull']
+VALID_TEAMS    = ['mercedes', 'redbull', 'ferrari', 'mclaren', 'williams']
 VALID_SESSIONS = ['R', 'Q', 'S']
 
 AVAILABLE_RACES = [
