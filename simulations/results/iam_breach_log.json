@@ -1,9 +1,9 @@
 {
   "simulation": "iam_breach",
-  "timestamp": "2026-04-23T11:20:54.250248+00:00",
+  "timestamp": "2026-06-11T13:13:27.867308+00:00",
   "total": 7,
   "defended": 7,
-  "elapsed_s": 0.03,
+  "elapsed_s": 0.02,
   "audit_summary": {
     "total": 38,
     "allowed": 0,
