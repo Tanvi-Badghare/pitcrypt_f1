@@ -29,8 +29,11 @@ RACE_SESSIONS = {
 }
 
 TEAMS = {
-    'Mercedes':        'mercedes',
+    'Mercedes AMG Petronas': 'mercedes',
     'Red Bull Racing': 'redbull',
+    'Scuderia Ferrari HP': 'ferrari',
+    'Mastercard Mclaren Racing': 'mclaren',
+    'Williams Racing': 'williams',
 }
 YEAR = 2025
 
