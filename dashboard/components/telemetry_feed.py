@@ -136,7 +136,13 @@ class TelemetryFeed:
             team=team, race=race, session=session,
             add_noise=False, inject_anomalies=False,
         )
-        self._data_rows = len(self._sim._df)
+        self._data_rows = (
+            self._sim.total_frames
+            if hasattr(self._sim, 'total_frames')
+            else len(self._sim.data)
+            if hasattr(self._sim, 'data')
+            else 0
+            )
         self._builder   = PacketBuilder(
             team=team, session=session
         )
