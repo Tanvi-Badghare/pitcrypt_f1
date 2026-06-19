@@ -25,7 +25,7 @@ os.makedirs(ANOMALY_DIR,   exist_ok=True)
 # ── Constants ────────────────────────────────────────────────────
 CHANNELS        = ['Speed', 'RPM', 'Throttle', 'Brake', 'nGear', 'DRS']
 Z_THRESHOLD     = 3.0
-TEAMS           = ['mercedes', 'redbull']
+TEAMS           = ['mercedes', 'redbull', 'ferrari', 'mclaren', 'williams']
 DEFAULT_SESSIONS = ['R', 'Q']
 SPRINT_SESSIONS  = {'São Paulo': ['R', 'Q', 'S'], 'Qatar': ['R', 'Q', 'S']}
 
