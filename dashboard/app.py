@@ -51,7 +51,7 @@ TEAM_CONFIG = {
     },
 }
 
-TEAMS_WITHOUT_DATA = {"ferrari", "mclaren", "williams"}
+TEAMS_WITHOUT_DATA = set()
 
 # ── Page config ───────────────────────────────────────────────────
 try:
