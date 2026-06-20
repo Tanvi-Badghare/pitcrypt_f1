@@ -251,7 +251,7 @@ class TestPacketValidation:
 
     def test_invalid_team_raises(self):
         with pytest.raises(ValueError):
-            PacketBuilder(team='ferrari')
+            PacketBuilder(team='aston_martin')
 
     def test_invalid_session_raises(self):
         with pytest.raises(ValueError):
