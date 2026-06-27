@@ -50,6 +50,7 @@ Provides methods for the dashboard to:
     - Process one packet through the full pipeline
     - Get recent packets, stats, crypto health
     - Get audit events and anomaly statistics
+    - Get chart history for live telemetry trace visualisation
 """
 
 
@@ -89,6 +90,14 @@ class TelemetryFeed:
         # Packet buffer
         self._recent_packets = []
         self._audit_events   = []
+
+        # Chart history — for live telemetry trace graph
+        self._chart_history = {
+            'seq':      [],
+            'speed':    [],
+            'rpm':      [],
+            'throttle': [],
+        }
 
         # Stats
         self._stats = {
@@ -142,7 +151,7 @@ class TelemetryFeed:
             else len(self._sim.data)
             if hasattr(self._sim, 'data')
             else 0
-            )
+        )
         self._builder   = PacketBuilder(
             team=team, session=session
         )
@@ -367,6 +376,24 @@ class TelemetryFeed:
             if len(self._recent_packets) > 100:
                 self._recent_packets.pop(0)
 
+            # ── Chart history — for telemetry trace graph ─────────
+            self._chart_history['seq'].append(
+                val_pkt.get('sequence_no', 0)
+            )
+            self._chart_history['speed'].append(
+                frame.get('Speed', 0)
+            )
+            self._chart_history['rpm'].append(
+                frame.get('RPM', 0)
+            )
+            self._chart_history['throttle'].append(
+                frame.get('Throttle', 0)
+            )
+            # Cap history length to avoid unbounded growth
+            if len(self._chart_history['seq']) > 200:
+                for key in self._chart_history:
+                    self._chart_history[key].pop(0)
+
             # Store audit event
             audit_evt = {
                 'timestamp':   datetime.now(
@@ -464,6 +491,13 @@ class TelemetryFeed:
 
     def get_data_rows(self) -> int:
         return self._data_rows
+
+    def get_chart_history(self) -> dict:
+        """
+        Return accumulated speed/RPM/throttle history
+        for live telemetry trace visualisation.
+        """
+        return dict(self._chart_history)
 
     def reset(self) -> None:
         self._reset_state()
