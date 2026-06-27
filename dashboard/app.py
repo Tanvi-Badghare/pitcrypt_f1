@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import streamlit as st
+import plotly.graph_objects as go
 from datetime import datetime, timezone
 from PIL import Image
 
@@ -386,6 +387,36 @@ else:
                 )
         else:
             st.info("No packets yet")
+
+        # ── Telemetry trace graph ────────────────────────────────
+        st.markdown("---")
+        st.markdown("**📈 Telemetry Trace**")
+
+        history = feed.get_chart_history()
+        if history['seq']:
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=history['seq'], y=history['speed'],
+                name='Speed (km/h)',
+                line=dict(color='#e10600', width=2),
+            ))
+            fig.add_trace(go.Scatter(
+                x=history['seq'],
+                y=[r / 100 for r in history['rpm']],
+                name='RPM (÷100)',
+                line=dict(color='#00d4ff', width=2),
+                yaxis='y2',
+            ))
+            fig.update_layout(
+                height=220,
+                margin=dict(l=10, r=10, t=10, b=10),
+                plot_bgcolor='#0a0a0a',
+                paper_bgcolor='#0a0a0a',
+                font=dict(color='#ffffff', size=10),
+                xaxis=dict(title='Packet sequence'),
+                legend=dict(orientation='h', y=1.15),
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
     with middle:
         st.markdown(
