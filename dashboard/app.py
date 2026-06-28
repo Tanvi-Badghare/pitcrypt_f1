@@ -25,31 +25,11 @@ from components.threat_panel   import ThreatPanel
 
 # ── Team configuration ────────────────────────────────────────────
 TEAM_CONFIG = {
-    "mercedes": {
-        "name":  "Mercedes AMG",
-        "color": "#00d2be",
-        "emoji": "🩵",
-    },
-    "redbull": {
-        "name":  "Red Bull Racing",
-        "color": "#3671c6",
-        "emoji": "🔵",
-    },
-    "ferrari": {
-        "name":  "Scuderia Ferrari",
-        "color": "#e8002d",
-        "emoji": "🔴",
-    },
-    "mclaren": {
-        "name":  "McLaren Racing",
-        "color": "#ff8000",
-        "emoji": "🟠",
-    },
-    "williams": {
-        "name":  "Williams Racing",
-        "color": "#64c4ff",
-        "emoji": "🩶",
-    },
+    "mercedes": {"name": "Mercedes AMG",      "color": "#00d2be", "emoji": "🩵"},
+    "redbull":  {"name": "Red Bull Racing",   "color": "#3671c6", "emoji": "🔵"},
+    "ferrari":  {"name": "Scuderia Ferrari",  "color": "#e8002d", "emoji": "🔴"},
+    "mclaren":  {"name": "McLaren Racing",    "color": "#ff8000", "emoji": "🟠"},
+    "williams": {"name": "Williams Racing",   "color": "#64c4ff", "emoji": "🩶"},
 }
 
 TEAMS_WITHOUT_DATA = set()
@@ -78,51 +58,35 @@ st.markdown("""
 <style>
     .main { background-color: #0a0a0a; }
     .accept-badge {
-        background-color: #00c851;
-        color: white;
-        padding: 2px 8px;
-        border-radius: 4px;
-        font-size: 0.75rem;
-        font-weight: bold;
+        background-color: #00c851; color: white;
+        padding: 2px 8px; border-radius: 4px;
+        font-size: 0.75rem; font-weight: bold;
     }
     .reject-badge {
-        background-color: #e10600;
-        color: white;
-        padding: 2px 8px;
-        border-radius: 4px;
-        font-size: 0.75rem;
-        font-weight: bold;
+        background-color: #e10600; color: white;
+        padding: 2px 8px; border-radius: 4px;
+        font-size: 0.75rem; font-weight: bold;
     }
     .flag-badge {
-        background-color: #ff8800;
-        color: white;
-        padding: 2px 8px;
-        border-radius: 4px;
-        font-size: 0.75rem;
-        font-weight: bold;
+        background-color: #ff8800; color: white;
+        padding: 2px 8px; border-radius: 4px;
+        font-size: 0.75rem; font-weight: bold;
     }
     .threat-alert {
         background-color: #1a0000;
         border-left: 4px solid #e10600;
-        padding: 0.5rem 1rem;
-        margin: 0.25rem 0;
-        border-radius: 0 4px 4px 0;
-        font-size: 0.85rem;
+        padding: 0.5rem 1rem; margin: 0.25rem 0;
+        border-radius: 0 4px 4px 0; font-size: 0.85rem;
     }
     .crypto-ok { color: #00c851; font-weight: bold; }
     .pipeline-header {
-        font-size: 1.1rem;
-        font-weight: bold;
-        color: #e10600;
+        font-size: 1.1rem; font-weight: bold; color: #e10600;
         border-bottom: 1px solid #333;
-        padding-bottom: 0.25rem;
-        margin-bottom: 0.5rem;
+        padding-bottom: 0.25rem; margin-bottom: 0.5rem;
     }
     div[data-testid="metric-container"] {
-        background: #1a1a2e;
-        border: 1px solid #333;
-        border-radius: 6px;
-        padding: 0.5rem;
+        background: #1a1a2e; border: 1px solid #333;
+        border-radius: 6px; padding: 0.5rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -131,6 +95,8 @@ st.markdown("""
 def init_session_state():
     if 'feed' not in st.session_state:
         st.session_state.feed = TelemetryFeed()
+    if 'feed_b' not in st.session_state:
+        st.session_state.feed_b = TelemetryFeed()
     if 'threat_panel' not in st.session_state:
         st.session_state.threat_panel = ThreatPanel()
     if 'running' not in st.session_state:
@@ -142,6 +108,7 @@ def init_session_state():
 
 init_session_state()
 feed         = st.session_state.feed
+feed_b       = st.session_state.feed_b
 threat_panel = st.session_state.threat_panel
 
 # ── Header ────────────────────────────────────────────────────────
@@ -157,14 +124,22 @@ with col_title:
 with col_status:
     pipeline_status = feed.get_pipeline_status()
     status_color    = "🟢" if pipeline_status == "ACTIVE" else "🔴"
-    st.markdown(
-        f"### {status_color} Pipeline: {pipeline_status}"
-    )
+    st.markdown(f"### {status_color} Pipeline: {pipeline_status}")
     st.markdown(
         f"*{datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}*"
     )
 
 st.divider()
+
+with st.expander("ℹ️ What do these numbers mean?"):
+    st.markdown("""
+    - **RPM** — engine revolutions per minute; how hard the engine is working
+    - **Throttle %** — how much the driver is pressing the accelerator
+    - **Gear** — current gearbox position (1 = lowest, 8 = highest)
+    - **seq=XXXX** — packet sequence number; proves no data was skipped or replayed
+    - **ACCEPT / REJECT / FLAG** — the FIA validator's verdict on each packet
+    - **Session key** — a one-time secret both sides agree on, used to scramble (encrypt) the data
+    """)
 
 # ── Sidebar ───────────────────────────────────────────────────────
 with st.sidebar:
@@ -176,9 +151,9 @@ with st.sidebar:
         format_func=lambda x: (
             f"{TEAM_CONFIG[x]['emoji']}  {TEAM_CONFIG[x]['name']}"
         ),
+        help="The F1 team whose telemetry you're streaming.",
     )
 
-    # Team colour bar
     st.markdown(
         f'<div style="background:{TEAM_CONFIG[team]["color"]};'
         f'height:3px;border-radius:2px;margin:4px 0 8px 0;">'
@@ -186,13 +161,29 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    # Fallback warning
     if team in TEAMS_WITHOUT_DATA:
         st.warning(
             f"⚠️ {TEAM_CONFIG[team]['name']} CSV data not yet "
             f"downloaded. Using Mercedes telemetry values — "
             f"full cryptographic pipeline still active for "
             f"{TEAM_CONFIG[team]['name']}.",
+        )
+
+    compare_mode = st.checkbox(
+        "⚖️ Compare two teams side-by-side",
+        help="Run two independent encrypted pipelines at once, "
+             "proving each team's session key is fully isolated.",
+    )
+
+    team_b = None
+    if compare_mode:
+        team_b = st.selectbox(
+            "Second Constructor",
+            [t for t in TEAM_CONFIG.keys() if t != team],
+            format_func=lambda x: (
+                f"{TEAM_CONFIG[x]['emoji']} {TEAM_CONFIG[x]['name']}"
+            ),
+            key='team_b_select',
         )
 
     race = st.selectbox(
@@ -203,16 +194,17 @@ with st.sidebar:
             "Monza", "Silverstone", "Netherlands",
             "Baku", "Qatar", "Abu Dhabi",
         ],
+        help="Which Grand Prix's real telemetry to stream.",
     )
 
     session = st.selectbox(
         "Session",
         ["R", "Q", "S"],
         format_func=lambda x: {
-            "R": "Race",
-            "Q": "Qualifying",
-            "S": "Sprint",
+            "R": "Race", "Q": "Qualifying", "S": "Sprint"
         }[x],
+        help="Race = full grand prix, Qualifying = single-lap "
+             "pace, Sprint = short-format race.",
     )
 
     n_packets = st.slider(
@@ -221,6 +213,8 @@ with st.sidebar:
         max_value=200,
         value=50,
         step=10,
+        help="How many consecutive telemetry frames to "
+             "push through the pipeline in one run.",
     )
 
     st.divider()
@@ -228,21 +222,20 @@ with st.sidebar:
     col_start, col_stop = st.columns(2)
     with col_start:
         start_btn = st.button(
-            "▶ Start",
-            use_container_width=True,
-            type="primary",
+            "▶ Start", use_container_width=True, type="primary",
         )
     with col_stop:
         stop_btn = st.button(
-            "⏹ Reset",
-            use_container_width=True,
+            "⏹ Reset", use_container_width=True,
         )
 
     if start_btn:
         with st.spinner("Initialising pipeline..."):
-            feed.initialise(
-                team=team, race=race, session=session
-            )
+            feed.initialise(team=team, race=race, session=session)
+            if compare_mode and team_b:
+                feed_b.initialise(
+                    team=team_b, race=race, session=session
+                )
             threat_panel.reset()
             st.session_state.running    = True
             st.session_state.start_time = time.time()
@@ -250,11 +243,48 @@ with st.sidebar:
 
     if stop_btn:
         feed.reset()
+        feed_b.reset()
         threat_panel.reset()
         st.session_state.running           = False
         st.session_state.packets_processed = 0
         st.session_state.start_time        = None
         st.info("Pipeline reset")
+
+    st.divider()
+    st.markdown("### 🎯 Attack Simulation")
+    attack_type = st.selectbox(
+        "Choose attack",
+        ['tamper', 'replay', 'forge'],
+        format_func=lambda x: {
+            'tamper': '🔓 Tamper Ciphertext',
+            'replay': '🔁 Replay Old Packet',
+            'forge':  '✍️ Forge Signature',
+        }[x],
+        help="Inject one malicious packet live and watch "
+             "the pipeline catch it.",
+    )
+    if st.button("💀 Inject Attack", use_container_width=True):
+        if st.session_state.running:
+            attack_result = feed.inject_attack(attack_type)
+            if attack_result:
+                threat_panel.ingest(attack_result)
+                if attack_result['decision'] == 'REJECT':
+                    st.error(
+                        f"Attack BLOCKED — {attack_type} → "
+                        f"{attack_result['reason']}"
+                    )
+                else:
+                    st.warning(
+                        f"Attack passed through — {attack_type} "
+                        f"→ {attack_result['decision']}"
+                    )
+            else:
+                st.info(
+                    "No prior packet to replay yet — "
+                    "run a few packets first."
+                )
+        else:
+            st.warning("Start the pipeline first.")
 
     st.divider()
     st.markdown("### 🔐 Crypto Stack")
@@ -266,14 +296,86 @@ with st.sidebar:
 
     st.divider()
     st.markdown("### 📊 Data Source")
-    st.markdown(
-        f"- **Team:** {TEAM_CONFIG[team]['name']}"
-    )
+    st.markdown(f"- **Team:** {TEAM_CONFIG[team]['name']}")
     st.markdown(f"- **Circuit:** {race}")
     st.markdown(f"- **Session:** {session}")
     rows = feed.get_data_rows()
     if rows > 0:
         st.markdown(f"- **Rows loaded:** {rows:,}")
+
+
+def render_telemetry_column(feed_obj, team_key, label):
+    """Render one team's full pipeline column."""
+    st.markdown(
+        f'<div class="pipeline-header">'
+        f'🚗 {label} — Live Telemetry</div>',
+        unsafe_allow_html=True,
+    )
+    recent = feed_obj.get_recent_packets(limit=15)
+    if recent:
+        for pkt in reversed(recent[-15:]):
+            payload  = pkt.get('payload_json', {})
+            seq      = pkt.get('sequence_no', 0)
+            driver   = payload.get('driver', 'UNK')
+            lap      = payload.get('lap', 0)
+            decision = pkt.get('decision', 'ACCEPT')
+            badge_map = {
+                'ACCEPT': '<span class="accept-badge">ACCEPT</span>',
+                'REJECT': '<span class="reject-badge">REJECT</span>',
+                'FLAG':   '<span class="flag-badge">FLAG</span>',
+            }
+            badge    = badge_map.get(decision, badge_map['ACCEPT'])
+            speed    = payload.get('Speed',    0)
+            rpm      = payload.get('RPM',      0)
+            throttle = payload.get('Throttle', 0)
+            gear     = payload.get('nGear',    0)
+            st.markdown(
+                f"{badge} `seq={seq:04d}` "
+                f"**[{driver}]** Lap **{lap}** · "
+                f"**{speed:.0f}** km/h · "
+                f"**{rpm:.0f}** RPM · "
+                f"**{throttle:.0f}**% throttle · "
+                f"gear **{gear}**",
+                unsafe_allow_html=True,
+            )
+    else:
+        st.info("No packets yet")
+
+    history = feed_obj.get_chart_history()
+    if history['seq']:
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=history['seq'], y=history['speed'],
+            name='Speed (km/h)',
+            line=dict(color=TEAM_CONFIG[team_key]['color'], width=2),
+        ))
+        fig.add_trace(go.Scatter(
+            x=history['seq'],
+            y=[r / 100 for r in history['rpm']],
+            name='RPM (÷100)',
+            line=dict(color='#00d4ff', width=2),
+            yaxis='y2',
+        ))
+        fig.update_layout(
+            height=200,
+            margin=dict(l=10, r=10, t=10, b=10),
+            plot_bgcolor='#0a0a0a',
+            paper_bgcolor='#0a0a0a',
+            font=dict(color='#ffffff', size=9),
+            xaxis=dict(title='Packet sequence'),
+            legend=dict(orientation='h', y=1.2),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    crypto = feed_obj.get_crypto_stats()
+    st.markdown(
+        f'<span class="crypto-ok">✅</span> '
+        f'Key: `{crypto["car_key"][:12]}...` · '
+        f'Sig verified: **{crypto["signatures"]}** · '
+        f'ZKP verified: **{crypto["zkp_verified"]}**',
+        unsafe_allow_html=True,
+    )
+
 
 # ── Main content ──────────────────────────────────────────────────
 if not st.session_state.running:
@@ -307,16 +409,15 @@ if not st.session_state.running:
         )
 
 else:
-    # ── Run simulation ────────────────────────────────────────────
     progress = st.progress(0, text="Running pipeline...")
-    results  = []
 
     for i in range(n_packets):
         result = feed.process_one_packet()
         if result:
-            results.append(result)
             threat_panel.ingest(result)
             st.session_state.packets_processed += 1
+        if compare_mode and team_b:
+            feed_b.process_one_packet()
         progress.progress(
             (i + 1) / n_packets,
             text=f"Processing packet {i+1}/{n_packets}..."
@@ -324,9 +425,8 @@ else:
 
     progress.empty()
 
-    # ── Top metrics ───────────────────────────────────────────────
-    stats    = feed.get_stats()
-    elapsed  = (
+    stats   = feed.get_stats()
+    elapsed = (
         time.time() - st.session_state.start_time
         if st.session_state.start_time else 0
     )
@@ -336,87 +436,49 @@ else:
 
     m1, m2, m3, m4, m5, m6 = st.columns(6)
     with m1:
-        st.metric("📦 Packets",     stats['total'])
+        st.metric("📦 Packets", stats['total'])
     with m2:
-        st.metric("✅ Accepted",    stats['accepted'],
-                  delta=f"{stats['accept_rate']:.1%}")
+        st.metric(
+            "✅ Accepted", stats['accepted'],
+            delta=f"{stats['accept_rate']:.1%}",
+            help="Packets that passed signature, sequence, "
+                 "and ZKP checks — proven authentic.",
+        )
     with m3:
-        st.metric("🚨 Rejected",    stats['rejected'],
-                  delta_color="inverse")
+        st.metric(
+            "🚨 Rejected", stats['rejected'],
+            delta_color="inverse",
+            help="Packets blocked for tampering, replay, "
+                 "or forged signatures.",
+        )
     with m4:
-        st.metric("⚠️ Flagged",     stats['flagged'])
+        st.metric("⚠️ Flagged", stats['flagged'])
     with m5:
         st.metric("🔑 Key Rotations", stats['key_rotations'])
     with m6:
-        st.metric("⚡ Throughput",  f"{throughput} pkt/s")
+        st.metric("⚡ Throughput", f"{throughput} pkt/s")
 
     st.divider()
 
-    # ── Three columns ─────────────────────────────────────────────
+    if compare_mode and team_b:
+        col_a, col_b = st.columns(2)
+        with col_a:
+            render_telemetry_column(
+                feed, team, TEAM_CONFIG[team]['name']
+            )
+        with col_b:
+            render_telemetry_column(
+                feed_b, team_b, TEAM_CONFIG[team_b]['name']
+            )
+        st.divider()
+
     left, middle, right = st.columns([2, 2, 2])
 
     with left:
-        st.markdown(
-            '<div class="pipeline-header">'
-            '🚗 Live Telemetry Stream</div>',
-            unsafe_allow_html=True,
-        )
-        recent = feed.get_recent_packets(limit=15)
-        if recent:
-            for pkt in reversed(recent[-15:]):
-                payload  = pkt.get('payload_json', {})
-                seq      = pkt.get('sequence_no', 0)
-                decision = pkt.get('decision', 'ACCEPT')
-                badge_map = {
-                    'ACCEPT': '<span class="accept-badge">ACCEPT</span>',
-                    'REJECT': '<span class="reject-badge">REJECT</span>',
-                    'FLAG':   '<span class="flag-badge">FLAG</span>',
-                }
-                badge    = badge_map.get(decision, badge_map['ACCEPT'])
-                speed    = payload.get('Speed',    0)
-                rpm      = payload.get('RPM',      0)
-                throttle = payload.get('Throttle', 0)
-                gear     = payload.get('nGear',    0)
-                st.markdown(
-                    f"{badge} `seq={seq:04d}` "
-                    f"**{speed:.0f}** km/h · "
-                    f"**{rpm:.0f}** RPM · "
-                    f"**{throttle:.0f}**% throttle · "
-                    f"gear **{gear}**",
-                    unsafe_allow_html=True,
-                )
-        else:
-            st.info("No packets yet")
-
-        # ── Telemetry trace graph ────────────────────────────────
-        st.markdown("---")
-        st.markdown("**📈 Telemetry Trace**")
-
-        history = feed.get_chart_history()
-        if history['seq']:
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=history['seq'], y=history['speed'],
-                name='Speed (km/h)',
-                line=dict(color='#e10600', width=2),
-            ))
-            fig.add_trace(go.Scatter(
-                x=history['seq'],
-                y=[r / 100 for r in history['rpm']],
-                name='RPM (÷100)',
-                line=dict(color='#00d4ff', width=2),
-                yaxis='y2',
-            ))
-            fig.update_layout(
-                height=220,
-                margin=dict(l=10, r=10, t=10, b=10),
-                plot_bgcolor='#0a0a0a',
-                paper_bgcolor='#0a0a0a',
-                font=dict(color='#ffffff', size=10),
-                xaxis=dict(title='Packet sequence'),
-                legend=dict(orientation='h', y=1.15),
+        if not compare_mode:
+            render_telemetry_column(
+                feed, team, TEAM_CONFIG[team]['name']
             )
-            st.plotly_chart(fig, use_container_width=True)
 
     with middle:
         st.markdown(
@@ -431,9 +493,7 @@ else:
             f'Session key: `{crypto["car_key"][:16]}...`',
             unsafe_allow_html=True,
         )
-        st.markdown(
-            f'Packets encrypted: **{crypto["encrypted"]}**'
-        )
+        st.markdown(f'Packets encrypted: **{crypto["encrypted"]}**')
         st.markdown(
             f'Key age: **{crypto["key_age_s"]:.0f}s** '
             f'/ 300s rotation window'
@@ -472,19 +532,19 @@ else:
             unsafe_allow_html=True,
         )
         threat_stats = threat_panel.get_stats()
-        t1, t2, t3   = st.columns(3)
+        t1, t2, t3 = st.columns(3)
         with t1:
             st.metric("Replays", threat_stats['replays'])
         with t2:
             st.metric("Tampers", threat_stats['tampers'])
         with t3:
-            st.metric("IAM",     threat_stats['iam_blocks'])
+            st.metric("IAM", threat_stats['iam_blocks'])
 
         recent_threats = threat_panel.get_recent(limit=12)
         if recent_threats:
             for threat in recent_threats:
                 severity = threat.get('severity', 'WARN')
-                icon     = "🔴" if severity == "CRITICAL" else "🟡"
+                icon = "🔴" if severity == "CRITICAL" else "🟡"
                 st.markdown(
                     f'<div class="threat-alert">'
                     f'{icon} <b>{threat["type"]}</b> — '
@@ -500,7 +560,6 @@ else:
 
     st.divider()
 
-    # ── Bottom row ────────────────────────────────────────────────
     audit_col, anomaly_col = st.columns([3, 2])
 
     with audit_col:
@@ -512,16 +571,12 @@ else:
                 seq      = evt.get('sequence_no', 0)
                 reason   = evt.get('reason', '')
                 ts       = evt.get('timestamp', '')[:19]
-                icon     = {
-                    'ACCEPT': '🟢',
-                    'REJECT': '🔴',
-                    'FLAG':   '🟡',
+                icon = {
+                    'ACCEPT': '🟢', 'REJECT': '🔴', 'FLAG': '🟡',
                 }.get(decision, '🟢')
                 st.markdown(
-                    f"{icon} `{ts}` · "
-                    f"**{decision}** · "
-                    f"seq={seq:04d} · "
-                    f"*{reason}*"
+                    f"{icon} `{ts}` · **{decision}** · "
+                    f"seq={seq:04d} · *{reason}*"
                 )
         else:
             st.info("No audit events yet")
@@ -535,8 +590,7 @@ else:
         if anomaly['checked'] > 0:
             flag_rate = anomaly['flagged'] / anomaly['checked']
             st.progress(
-                flag_rate,
-                text=f"Flag rate: {flag_rate:.1%}"
+                flag_rate, text=f"Flag rate: {flag_rate:.1%}"
             )
 
     st.divider()
