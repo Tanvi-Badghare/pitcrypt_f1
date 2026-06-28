@@ -51,6 +51,7 @@ Provides methods for the dashboard to:
     - Get recent packets, stats, crypto health
     - Get audit events and anomaly statistics
     - Get chart history for live telemetry trace visualisation
+    - Inject live attacks for demo purposes
 """
 
 
@@ -90,6 +91,10 @@ class TelemetryFeed:
         # Packet buffer
         self._recent_packets = []
         self._audit_events   = []
+
+        # Last successfully accepted encrypted packet —
+        # used as the source for replay attack injection
+        self._last_encrypted = None
 
         # Chart history — for live telemetry trace graph
         self._chart_history = {
@@ -363,18 +368,31 @@ class TelemetryFeed:
                 time.time() - self._session_start
             )
 
+            # Attach anomaly_result so threat panel can read
+            # the actual violated channel name, not "unknown"
+            val_pkt['anomaly_result'] = annotated.get(
+                'anomaly_result', {}
+            )
+
             result = self._make_result(
                 val_pkt, decision, 'all_checks_passed'
             )
-            result['payload_json'] = frame
+            result['payload_json']    = frame
             result['anomaly_flagged'] = (
                 annotated['anomaly_flagged']
+            )
+            result['anomaly_result']  = annotated.get(
+                'anomaly_result', {}
             )
 
             # Store in buffer
             self._recent_packets.append(result)
             if len(self._recent_packets) > 100:
                 self._recent_packets.pop(0)
+
+            # Save last successfully encrypted packet —
+            # source material for replay attack injection
+            self._last_encrypted = dict(encrypted)
 
             # ── Chart history — for telemetry trace graph ─────────
             self._chart_history['seq'].append(
@@ -389,7 +407,6 @@ class TelemetryFeed:
             self._chart_history['throttle'].append(
                 frame.get('Throttle', 0)
             )
-            # Cap history length to avoid unbounded growth
             if len(self._chart_history['seq']) > 200:
                 for key in self._chart_history:
                     self._chart_history[key].pop(0)
@@ -415,6 +432,140 @@ class TelemetryFeed:
             self._stats['total']    += 1
             return None
 
+    def inject_attack(self, attack_type: str) -> Optional[dict]:
+        """
+        Manually inject one malicious packet for live demo.
+
+        Args:
+            attack_type: 'tamper', 'replay', or 'forge'
+
+        Returns:
+            Result dict tagged with 'attack_injected',
+            or None if pipeline not initialised.
+        """
+        if not self._initialised:
+            return None
+
+        # ── Replay attack — resend the last accepted packet ──────
+        if attack_type == 'replay':
+            if self._last_encrypted is None:
+                return None
+            encrypted = dict(self._last_encrypted)
+        else:
+            frame  = self._sim.get_next_frame()
+            packet = self._builder.build(frame)
+            signed = self._signer.sign_packet(packet)
+            commit = ZKPVerifier.generate_commitment(
+                signed['payload']
+            )
+            encrypted = self._enc.encrypt_packet(signed)
+
+            if attack_type == 'tamper':
+                tampered_ct = bytearray(
+                    encrypted['ciphertext_bytes']
+                )
+                tampered_ct[5] ^= 0xFF
+                encrypted['ciphertext_bytes'] = bytes(
+                    tampered_ct
+                )
+                encrypted['ciphertext'] = bytes(
+                    tampered_ct
+                ).hex()
+
+        self._stats['total'] += 1
+
+        # ── Relay decrypt ─────────────────────────────────────────
+        try:
+            decrypted = self._dec.decrypt(encrypted)
+        except InvalidTag:
+            self._record_reject(encrypted, 'aead_failed')
+            result = self._make_result(
+                encrypted, 'REJECT', 'aead_failed'
+            )
+            result['attack_injected'] = attack_type
+            self._recent_packets.append(result)
+            return result
+
+        # ── Relay integrity check — catches replay here ──────────
+        integrity = self._relay_checker.check(decrypted)
+        if not integrity.passed:
+            self._record_reject(decrypted, 'integrity_failed')
+            result = self._make_result(
+                decrypted, 'REJECT', 'integrity_failed'
+            )
+            result['attack_injected'] = attack_type
+            self._recent_packets.append(result)
+            return result
+
+        if attack_type == 'forge':
+            decrypted = dict(decrypted)
+            decrypted['signature_bytes'] = os.urandom(64)
+            decrypted['signature'] = (
+                decrypted['signature_bytes'].hex()
+            )
+
+        try:
+            reencrypted = self._reenc.reencrypt(decrypted)
+        except Exception:
+            result = self._make_result(
+                decrypted, 'REJECT', 'reencrypt_failed'
+            )
+            result['attack_injected'] = attack_type
+            self._recent_packets.append(result)
+            return result
+
+        try:
+            plaintext = self._val_eng.decrypt(
+                nonce=reencrypted['nonce_bytes'],
+                ciphertext=reencrypted['ciphertext_bytes'],
+                associated_data=reencrypted['header'],
+            )
+        except InvalidTag:
+            self._record_reject(reencrypted, 'aead_failed')
+            result = self._make_result(
+                reencrypted, 'REJECT', 'aead_failed'
+            )
+            result['attack_injected'] = attack_type
+            self._recent_packets.append(result)
+            return result
+
+        val_pkt = dict(reencrypted)
+        val_pkt['payload_bytes']  = plaintext
+        val_pkt['original_node']  = (
+            encrypted.get('node_id', 'unknown')
+        )
+
+        # ── Validator sequence check — second replay defence ──────
+        seq_result = self._val_checker.check(val_pkt)
+        if not seq_result.passed:
+            self._record_reject(val_pkt, 'sequence_failed')
+            result = self._make_result(
+                val_pkt, 'REJECT', 'sequence_failed'
+            )
+            result['attack_injected'] = attack_type
+            self._recent_packets.append(result)
+            return result
+
+        # ── Signature verify — catches forge here ─────────────────
+        try:
+            self._sig_verifier.verify(val_pkt)
+        except (InvalidSignature, SignatureVerificationError):
+            self._record_reject(val_pkt, 'sig_failed')
+            result = self._make_result(
+                val_pkt, 'REJECT', 'sig_failed'
+            )
+            result['attack_injected'] = attack_type
+            self._recent_packets.append(result)
+            return result
+
+        result = self._make_result(
+            val_pkt, 'ACCEPT', 'all_checks_passed'
+        )
+        result['attack_injected'] = attack_type
+        self._recent_packets.append(result)
+        self._stats['accepted'] += 1
+        return result
+
     def _make_result(
         self,
         pkt:      dict,
@@ -423,19 +574,21 @@ class TelemetryFeed:
     ) -> dict:
         """Build result dict for dashboard."""
         return {
-            'sequence_no': pkt.get('sequence_no', 0),
-            'team':        pkt.get('team', ''),
-            'session':     pkt.get('session', ''),
-            'node_id':     pkt.get(
+            'sequence_no':    pkt.get('sequence_no', 0),
+            'team':           pkt.get('team', ''),
+            'session':        pkt.get('session', ''),
+            'driver':         pkt.get('driver', 'UNK'),
+            'node_id':        pkt.get(
                 'node_id',
                 pkt.get('original_node', '')
             ),
-            'decision':    decision,
-            'reason':      reason,
-            'timestamp':   datetime.now(
+            'decision':       decision,
+            'reason':         reason,
+            'timestamp':      datetime.now(
                 timezone.utc
             ).isoformat(),
-            'payload_json': pkt.get('payload_json', {}),
+            'payload_json':   pkt.get('payload_json', {}),
+            'anomaly_result': pkt.get('anomaly_result', {}),
         }
 
     def _record_reject(
@@ -443,7 +596,6 @@ class TelemetryFeed:
     ) -> None:
         """Record a rejection."""
         self._stats['rejected'] += 1
-        self._stats['total']    += 1
 
         evt = {
             'timestamp':   datetime.now(
