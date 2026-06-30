@@ -23,7 +23,7 @@ RACES = [
 
 SESSIONS     = ['R', 'Q']
 SPRINT_RACES = ['Qatar', 'São Paulo']
-CHANNELS     = ['Speed', 'RPM', 'Throttle', 'Brake', 'nGear', 'DRS']
+CHANNELS     = ['Speed', 'RPM', 'Throttle', 'Brake', 'nGear', 'DRS', 'Distance', 'X', 'Y']
 
 
 def get_telemetry_with_gear(lap) -> pd.DataFrame:
@@ -138,6 +138,8 @@ for team_name, team_key in TARGET_TEAM.items():
                             continue
 
                         tel = tel[CHANNELS].copy()
+                        tel['Driver']    = lap['Driver']
+                        tel['LapNumber'] = lap['LapNumber']
                         tel['Team']    = team_name
                         tel['Race']    = race
                         tel['Session'] = session_type
