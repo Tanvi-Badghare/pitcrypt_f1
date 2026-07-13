@@ -66,6 +66,8 @@ class ThreatPanel:
     """
     Real-time threat detection panel.
     Classifies pipeline events as security threats.
+    Deduplicates consecutive identical anomaly flags
+    into a single summary card.
     """
 
     def __init__(self):
@@ -133,7 +135,7 @@ class ThreatPanel:
             ))
 
         elif 'sig' in reason:
-            self._sig_count  += 1
+            self._sig_count    += 1
             self._tamper_count += 1
             self._add_event(ThreatEvent(
                 event_type='SIGNATURE_FAILURE',
@@ -190,13 +192,9 @@ class ThreatPanel:
 
         elif decision == 'FLAG':
             self._anomaly_count += 1
-            anomaly_result = result.get(
-                'anomaly_result', {}
-            )
-            violations = anomaly_result.get(
-                'violations', []
-            )
-            channels = ', '.join(
+            anomaly_result = result.get('anomaly_result', {})
+            violations     = anomaly_result.get('violations', [])
+            channels       = ', '.join(
                 v.get('channel', '') for v in violations
             ) if violations else 'unknown'
             self._add_event(ThreatEvent(
@@ -223,24 +221,65 @@ class ThreatPanel:
     def get_recent(
         self, limit: int = 20
     ) -> List[dict]:
-        """Get most recent threat events as dicts."""
-        return [
-            e.to_dict()
-            for e in self._events[-limit:]
-        ]
+        """
+        Get most recent threat events as dicts.
+        Deduplicates consecutive identical event
+        types and channels into a single summary
+        card with a count badge.
+        """
+        raw = [e.to_dict() for e in self._events]
+
+        # ── Deduplication ────────────────────────────────────────
+        deduplicated = []
+        i = 0
+        while i < len(raw):
+            current = raw[i]
+            count   = 1
+            first_seq = current.get('seq', '?')
+            last_seq  = first_seq
+
+            # Count consecutive events of same type
+            # with same channel signature
+            def _channel_key(evt):
+                msg = evt.get('message', '')
+                return msg.split('channels:')[-1].strip()
+
+            while (
+                i + count < len(raw) and
+                raw[i + count].get('type') == current.get('type') and
+                _channel_key(raw[i + count]) == _channel_key(current)
+            ):
+                last_seq = raw[i + count].get('seq', '?')
+                count   += 1
+
+            if count > 1:
+                merged         = dict(current)
+                channel_part   = _channel_key(current)
+                merged['message'] = (
+                    f"Statistical threshold — "
+                    f"channels: {channel_part} "
+                    f"×{count} (seq {first_seq}–{last_seq})"
+                )
+                deduplicated.append(merged)
+            else:
+                deduplicated.append(current)
+
+            i += count
+
+        return deduplicated[-limit:]
 
     def get_stats(self) -> dict:
         """Get threat statistics."""
         return {
-            'replays':   self._replay_count,
-            'tampers':   self._tamper_count,
-            'anomalies': self._anomaly_count,
-            'iam_blocks': self._iam_count,
+            'replays':      self._replay_count,
+            'tampers':      self._tamper_count,
+            'anomalies':    self._anomaly_count,
+            'iam_blocks':   self._iam_count,
             'sig_failures': self._sig_count,
             'zkp_failures': self._zkp_count,
             'total_threats': len(self._events),
-            'accepted':  self._accepted,
-            'rejected':  self._rejected,
+            'accepted':     self._accepted,
+            'rejected':     self._rejected,
         }
 
     def get_critical_events(self) -> List[dict]:
