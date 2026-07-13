@@ -25,11 +25,11 @@ from components.threat_panel   import ThreatPanel
 
 # ── Team configuration ────────────────────────────────────────────
 TEAM_CONFIG = {
-    "mercedes": {"name": "Mercedes AMG",      "color": "#00d2be", "emoji": "🩵"},
-    "redbull":  {"name": "Red Bull Racing",   "color": "#3671c6", "emoji": "🔵"},
-    "ferrari":  {"name": "Scuderia Ferrari",  "color": "#e8002d", "emoji": "🔴"},
-    "mclaren":  {"name": "McLaren Racing",    "color": "#ff8000", "emoji": "🟠"},
-    "williams": {"name": "Williams Racing",   "color": "#64c4ff", "emoji": "🩶"},
+    "mercedes": {"name": "Mercedes AMG",     "color": "#00d2be", "emoji": "🩵"},
+    "redbull":  {"name": "Red Bull Racing",  "color": "#3671c6", "emoji": "🔵"},
+    "ferrari":  {"name": "Scuderia Ferrari", "color": "#e8002d", "emoji": "🔴"},
+    "mclaren":  {"name": "McLaren Racing",   "color": "#ff8000", "emoji": "🟠"},
+    "williams": {"name": "Williams Racing",  "color": "#64c4ff", "emoji": "🩶"},
 }
 
 TEAMS_WITHOUT_DATA = set()
@@ -133,12 +133,16 @@ st.divider()
 
 with st.expander("ℹ️ What do these numbers mean?"):
     st.markdown("""
+    - **Speed** — car speed in km/h at this exact moment on track
     - **RPM** — engine revolutions per minute; how hard the engine is working
-    - **Throttle %** — how much the driver is pressing the accelerator
-    - **Gear** — current gearbox position (1 = lowest, 8 = highest)
+    - **Throttle %** — how much the driver is pressing the accelerator (100% = flat out)
+    - **Gear** — current gearbox position (1 = lowest/slowest, 8 = highest/fastest)
     - **seq=XXXX** — packet sequence number; proves no data was skipped or replayed
-    - **ACCEPT / REJECT / FLAG** — the FIA validator's verdict on each packet
-    - **Session key** — a one-time secret both sides agree on, used to scramble (encrypt) the data
+    - **ACCEPT** — FIA validator confirmed this packet is authentic and unmodified
+    - **REJECT** — packet blocked; tampered, replayed, or forged
+    - **FLAG** — packet accepted but contains a statistically unusual sensor value
+    - **Session key** — a one-time cryptographic secret used to encrypt the data stream
+    - **ECDH** — how both sides agree on that secret without ever sending it directly
     """)
 
 # ── Sidebar ───────────────────────────────────────────────────────
@@ -151,7 +155,7 @@ with st.sidebar:
         format_func=lambda x: (
             f"{TEAM_CONFIG[x]['emoji']}  {TEAM_CONFIG[x]['name']}"
         ),
-        help="The F1 team whose telemetry you're streaming.",
+        help="The F1 team whose real telemetry data you're streaming.",
     )
 
     st.markdown(
@@ -165,14 +169,14 @@ with st.sidebar:
         st.warning(
             f"⚠️ {TEAM_CONFIG[team]['name']} CSV data not yet "
             f"downloaded. Using Mercedes telemetry values — "
-            f"full cryptographic pipeline still active for "
-            f"{TEAM_CONFIG[team]['name']}.",
+            f"full cryptographic pipeline still active.",
         )
 
     compare_mode = st.checkbox(
         "⚖️ Compare two teams side-by-side",
-        help="Run two independent encrypted pipelines at once, "
-             "proving each team's session key is fully isolated.",
+        help="Run two independent encrypted pipelines simultaneously. "
+             "Each team gets its own ECDH session keys, proving "
+             "complete cryptographic isolation between constructors.",
     )
 
     team_b = None
@@ -194,7 +198,7 @@ with st.sidebar:
             "Monza", "Silverstone", "Netherlands",
             "Baku", "Qatar", "Abu Dhabi",
         ],
-        help="Which Grand Prix's real telemetry to stream.",
+        help="Which Grand Prix circuit's real telemetry to stream.",
     )
 
     session = st.selectbox(
@@ -204,7 +208,7 @@ with st.sidebar:
             "R": "Race", "Q": "Qualifying", "S": "Sprint"
         }[x],
         help="Race = full grand prix, Qualifying = single-lap "
-             "pace, Sprint = short-format race.",
+             "pace runs, Sprint = short-format Saturday race.",
     )
 
     n_packets = st.slider(
@@ -213,8 +217,8 @@ with st.sidebar:
         max_value=200,
         value=50,
         step=10,
-        help="How many consecutive telemetry frames to "
-             "push through the pipeline in one run.",
+        help="Each packet = one telemetry sample at one instant in "
+             "time. 50 packets ≈ a few seconds of real on-track data.",
     )
 
     st.divider()
@@ -260,8 +264,8 @@ with st.sidebar:
             'replay': '🔁 Replay Old Packet',
             'forge':  '✍️ Forge Signature',
         }[x],
-        help="Inject one malicious packet live and watch "
-             "the pipeline catch it.",
+        help="Inject one malicious packet into the live pipeline "
+             "and watch the security layer catch it in real time.",
     )
     if st.button("💀 Inject Attack", use_container_width=True):
         if st.session_state.running:
@@ -270,18 +274,18 @@ with st.sidebar:
                 threat_panel.ingest(attack_result)
                 if attack_result['decision'] == 'REJECT':
                     st.error(
-                        f"Attack BLOCKED — {attack_type} → "
+                        f"✅ Attack BLOCKED — {attack_type} → "
                         f"{attack_result['reason']}"
                     )
                 else:
                     st.warning(
-                        f"Attack passed through — {attack_type} "
+                        f"⚠️ Attack slipped through — {attack_type} "
                         f"→ {attack_result['decision']}"
                     )
             else:
                 st.info(
-                    "No prior packet to replay yet — "
-                    "run a few packets first."
+                    "No prior packet available to replay. "
+                    "Run at least one packet batch first."
                 )
         else:
             st.warning("Start the pipeline first.")
@@ -305,20 +309,27 @@ with st.sidebar:
 
 
 def render_telemetry_column(feed_obj, team_key, label):
-    """Render one team's full pipeline column."""
+    """Render one team's telemetry column including
+    live stream, dual-axis chart, and crypto summary."""
+
+    team_color = TEAM_CONFIG[team_key]['color']
+
     st.markdown(
         f'<div class="pipeline-header">'
         f'🚗 {label} — Live Telemetry</div>',
         unsafe_allow_html=True,
     )
+
     recent = feed_obj.get_recent_packets(limit=15)
     if recent:
         for pkt in reversed(recent[-15:]):
-            payload  = pkt.get('payload_json', {})
-            seq      = pkt.get('sequence_no', 0)
-            driver   = payload.get('driver', 'UNK')
-            lap      = payload.get('lap', 0)
-            decision = pkt.get('decision', 'ACCEPT')
+            payload   = pkt.get('payload_json', {})
+            seq       = pkt.get('sequence_no', 0)
+            driver    = payload.get('driver', 'UNK')
+            lap       = payload.get('lap', 0)
+            track_pos = payload.get('track_position', '')
+            decision  = pkt.get('decision', 'ACCEPT')
+
             badge_map = {
                 'ACCEPT': '<span class="accept-badge">ACCEPT</span>',
                 'REJECT': '<span class="reject-badge">REJECT</span>',
@@ -329,9 +340,13 @@ def render_telemetry_column(feed_obj, team_key, label):
             rpm      = payload.get('RPM',      0)
             throttle = payload.get('Throttle', 0)
             gear     = payload.get('nGear',    0)
+
+            # Build position label — only show if non-empty
+            pos_label = f" · **{track_pos}**" if track_pos else ""
+
             st.markdown(
                 f"{badge} `seq={seq:04d}` "
-                f"**[{driver}]** Lap **{lap}** · "
+                f"**[{driver}]** Lap **{lap}**{pos_label} · "
                 f"**{speed:.0f}** km/h · "
                 f"**{rpm:.0f}** RPM · "
                 f"**{throttle:.0f}**% throttle · "
@@ -341,32 +356,60 @@ def render_telemetry_column(feed_obj, team_key, label):
     else:
         st.info("No packets yet")
 
+    # ── Dual-axis telemetry trace chart ───────────────────────────
     history = feed_obj.get_chart_history()
     if history['seq']:
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=history['seq'], y=history['speed'],
-            name='Speed (km/h)',
-            line=dict(color=TEAM_CONFIG[team_key]['color'], width=2),
-        ))
+
+        # Speed — team colour, left axis
         fig.add_trace(go.Scatter(
             x=history['seq'],
-            y=[r / 100 for r in history['rpm']],
-            name='RPM (÷100)',
+            y=history['speed'],
+            name='Speed (km/h)',
+            line=dict(color='#e10600', width=3),
+            yaxis='y1',
+        ))
+
+        # RPM — electric blue, right axis (raw values, own scale)
+        fig.add_trace(go.Scatter(
+            x=history['seq'],
+            y=history['rpm'],
+            name='RPM',
             line=dict(color='#00d4ff', width=2),
             yaxis='y2',
         ))
+
         fig.update_layout(
-            height=200,
-            margin=dict(l=10, r=10, t=10, b=10),
+            height=220,
+            margin=dict(l=10, r=60, t=30, b=10),
             plot_bgcolor='#0a0a0a',
             paper_bgcolor='#0a0a0a',
             font=dict(color='#ffffff', size=9),
-            xaxis=dict(title='Packet sequence'),
+            xaxis=dict(
+                title='Packet sequence',
+                gridcolor='#222',
+            ),
+            yaxis=dict(
+                title='Speed (km/h)',
+                title_font=dict(color='#e10600'),
+                tickfont=dict(color='#e10600'),
+                gridcolor='#222',
+                range=[0, 380],
+            ),
+            yaxis2=dict(
+                title='RPM',
+                title_font=dict(color='#00d4ff'),
+                tickfont=dict(color='#00d4ff'),
+                overlaying='y',
+                side='right',
+                showgrid=False,
+                range=[0, 16000],
+            ),
             legend=dict(orientation='h', y=1.2),
         )
         st.plotly_chart(fig, use_container_width=True)
 
+    # ── Crypto summary line ───────────────────────────────────────
     crypto = feed_obj.get_crypto_stats()
     st.markdown(
         f'<span class="crypto-ok">✅</span> '
@@ -441,22 +484,30 @@ else:
         st.metric(
             "✅ Accepted", stats['accepted'],
             delta=f"{stats['accept_rate']:.1%}",
-            help="Packets that passed signature, sequence, "
-                 "and ZKP checks — proven authentic.",
+            help="Packets that passed all cryptographic checks "
+                 "— signature, sequence, and ZKP commitment.",
         )
     with m3:
         st.metric(
             "🚨 Rejected", stats['rejected'],
             delta_color="inverse",
-            help="Packets blocked for tampering, replay, "
-                 "or forged signatures.",
+            help="Packets blocked due to tampering, "
+                 "replay, or forged signatures.",
         )
     with m4:
-        st.metric("⚠️ Flagged", stats['flagged'])
+        st.metric(
+            "⚠️ Flagged", stats['flagged'],
+            help="Accepted packets with statistically "
+                 "unusual sensor values.",
+        )
     with m5:
         st.metric("🔑 Key Rotations", stats['key_rotations'])
     with m6:
-        st.metric("⚡ Throughput", f"{throughput} pkt/s")
+        st.metric(
+            "⚡ pkt/s", f"{throughput:.0f}",
+            help="Packets processed per second through "
+                 "the full cryptographic pipeline.",
+        )
 
     st.divider()
 
@@ -538,13 +589,13 @@ else:
         with t2:
             st.metric("Tampers", threat_stats['tampers'])
         with t3:
-            st.metric("IAM", threat_stats['iam_blocks'])
+            st.metric("IAM",     threat_stats['iam_blocks'])
 
-        recent_threats = threat_panel.get_recent(limit=12)
+        recent_threats = threat_panel.get_recent(limit=8)
         if recent_threats:
             for threat in recent_threats:
                 severity = threat.get('severity', 'WARN')
-                icon = "🔴" if severity == "CRITICAL" else "🟡"
+                icon     = "🔴" if severity == "CRITICAL" else "🟡"
                 st.markdown(
                     f'<div class="threat-alert">'
                     f'{icon} <b>{threat["type"]}</b> — '
@@ -584,8 +635,8 @@ else:
     with anomaly_col:
         st.markdown("#### 📊 Anomaly Statistics")
         anomaly = feed.get_anomaly_stats()
-        st.metric("Packets checked",   anomaly['checked'])
-        st.metric("Anomalies flagged", anomaly['flagged'])
+        st.metric("Packets checked",    anomaly['checked'])
+        st.metric("Anomalies flagged",  anomaly['flagged'])
         st.metric("Anomalies rejected", anomaly['rejected'])
         if anomaly['checked'] > 0:
             flag_rate = anomaly['flagged'] / anomaly['checked']
