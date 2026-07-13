@@ -4,6 +4,7 @@ import random
 import logging
 from datetime import datetime, timezone
 from typing import Iterator, Dict, Any
+from corner_lookup import CornerLookup
 
 import pandas as pd
 import numpy as np
@@ -15,8 +16,6 @@ logging.basicConfig(
 )
 
 # ── Root path fix ────────────────────────────────────────────────
-# Always resolve paths relative to project root
-# regardless of where the script is run from
 ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), '..', '..')
 )
@@ -25,7 +24,10 @@ PROCESSED_DIR   = os.path.join(ROOT, 'data', 'processed')
 THRESHOLDS_PATH = os.path.join(PROCESSED_DIR, 'thresholds.json')
 
 # ── Constants ────────────────────────────────────────────────────
-CHANNELS = ['Speed', 'RPM', 'Throttle', 'Brake', 'nGear', 'DRS']
+CHANNELS = [
+    'Speed', 'RPM', 'Throttle', 'Brake', 'nGear', 'DRS',
+    'X', 'Y', 'Distance',
+]
 
 VALID_TEAMS    = ['mercedes', 'redbull', 'ferrari', 'mclaren', 'williams']
 VALID_SESSIONS = ['R', 'Q', 'S']
@@ -61,6 +63,7 @@ class SensorSimulator:
         self.team    = self._validate_team(team)
         self.session = self._validate_session(session)
         self.race    = self._select_race(race)
+        self.corner_lookup = CornerLookup(self.race)
 
         self.add_noise        = add_noise
         self.inject_anomalies = inject_anomalies
@@ -155,7 +158,6 @@ class SensorSimulator:
             )
 
         # ── Strategy 1: Load combined baseline CSV ───────────────
-        # forensic_analysis.py produces one baseline per team
         baseline_path = os.path.join(
             PROCESSED_DIR, f"{self.team}_baseline.csv"
         )
@@ -168,7 +170,6 @@ class SensorSimulator:
 
         else:
             # ── Strategy 2: Load individual race CSVs ───────────
-            # Fallback if baseline doesn't exist
             print(f"\n  Baseline not found — scanning for "
                   f"individual race CSVs...")
 
@@ -199,8 +200,6 @@ class SensorSimulator:
                 path = os.path.join(raw_dir, fname)
                 try:
                     chunk = pd.read_csv(path)
-                    # Parse race and session from filename
-                    # Format: mercedes_Bahrain_R.csv
                     parts = fname.replace('.csv', '').split('_')
                     if len(parts) >= 3:
                         chunk['Team']    = parts[0]
@@ -223,7 +222,9 @@ class SensorSimulator:
         if missing:
             raise ValueError(
                 f"Missing required telemetry columns: {missing}\n"
-                f"Available columns: {list(df.columns)}"
+                f"Available columns: {list(df.columns)}\n"
+                f"Re-run fetch_telemetry.py / fetch_one_team.py "
+                f"to include Distance/X/Y columns."
             )
 
         # ── Clean ────────────────────────────────────────────────
@@ -266,7 +267,7 @@ class SensorSimulator:
     ) -> Dict[str, Any]:
         candidates = [
             c for c in CHANNELS
-            if c not in ['Brake', 'DRS', 'nGear']
+            if c not in ['Brake', 'DRS', 'nGear', 'X', 'Y', 'Distance']
         ]
         channel = random.choice(candidates)
 
@@ -311,8 +312,17 @@ class SensorSimulator:
             val = row.get(ch, 0)
             if ch in ['Brake', 'nGear', 'DRS']:
                 frame[ch] = int(val)
+            elif ch in ['X', 'Y', 'Distance']:
+                frame[ch] = round(float(val), 2)
             else:
                 frame[ch] = round(float(val), 4)
+
+        # ── Track position lookup ────────────────────────────────
+        x_pos = float(row.get('X', 0))
+        y_pos = float(row.get('Y', 0))
+        frame['track_position'] = self.corner_lookup.label(
+            x_pos, y_pos
+        )
 
         if self.add_noise:
             frame = self._add_noise(frame)
@@ -377,6 +387,7 @@ if __name__ == '__main__':
             f"Throttle={frame['Throttle']}% | "
             f"Gear={frame['nGear']} | "
             f"DRS={frame['DRS']} | "
+            f"Position={frame['track_position']} | "
             f"Race={frame['race']}"
         )
 
@@ -395,6 +406,7 @@ if __name__ == '__main__':
         print(
             f"  Frame {i+1}: "
             f"Speed={frame['Speed']} | "
+            f"Position={frame['track_position']} | "
             f"Race={frame['race']} | "
             f"{'⚠️  ANOMALY: ' + frame.get('_anomaly_channel','') if anomaly else '✅ OK'}"
         )
@@ -409,6 +421,7 @@ if __name__ == '__main__':
     )
     frame = sim3.get_next_frame()
     print(f"  Sprint frame: Speed={frame['Speed']} | "
+          f"Position={frame['track_position']} | "
           f"Race={frame['race']} | Session={frame['session']}")
 
     # Test 4 — Progress tracking
