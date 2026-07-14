@@ -56,12 +56,16 @@ class SensorSimulator:
         team:             str   = 'mercedes',
         race:             str   = None,
         session:          str   = 'R',
+        driver:           str   = None,     
+        lap:              int   = None, 
         add_noise:        bool  = True,
         inject_anomalies: bool  = False,
         anomaly_rate:     float = 0.001,
     ):
         self.team    = self._validate_team(team)
         self.session = self._validate_session(session)
+        self.driver = driver   
+        self.lap = lap
         self.race    = self._select_race(race)
         self.corner_lookup = CornerLookup(self.race)
 
@@ -233,6 +237,35 @@ class SensorSimulator:
         df = df.reset_index(drop=True)
         after = len(df)
 
+        # ── Driver filter ────────────────────────────────────────
+        if self.driver and 'Driver' in df.columns:
+            available = sorted(df['Driver'].unique().tolist())
+            if self.driver in available:
+                df = df[df['Driver'] == self.driver].reset_index(
+                    drop=True
+                )
+                print(f"  Driver filter: {self.driver} "
+                      f"({len(df):,} rows)")
+            else:
+                print(f"  ⚠ Driver '{self.driver}' not found. "
+                      f"Available: {available}. Loading all.")
+
+        # ── Lap filter ───────────────────────────────────────────
+        if self.lap and 'LapNumber' in df.columns:
+            available_laps = sorted(
+                df['LapNumber'].dropna().astype(int).unique().tolist()
+            )
+            if self.lap in available_laps:
+                df = df[
+                    df['LapNumber'].astype(int) == self.lap
+                ].reset_index(drop=True)
+                print(f"  Lap filter: Lap {self.lap} "
+                      f"({len(df):,} rows)")
+            else:
+                print(f"  ⚠ Lap {self.lap} not available. "
+                      f"Available laps: {available_laps}. "
+                      f"Loading all.")
+                
         if after == 0:
             raise ValueError(
                 "Dataset is empty after cleaning. "
@@ -348,6 +381,26 @@ class SensorSimulator:
         """Reset stream to first frame."""
         self._idx = 0
         logging.info("Stream reset to frame 0")
+
+    @property
+    def available_drivers(self) -> list:
+        """List of driver codes in loaded dataset."""
+        if self.data is not None and 'Driver' in self.data.columns:
+            return sorted(
+                self.data['Driver'].dropna().unique().tolist()
+            )
+        return []
+
+    @property
+    def available_laps(self) -> list:
+        """List of lap numbers in loaded dataset."""
+        if (self.data is not None and
+                'LapNumber' in self.data.columns):
+            return sorted(
+                self.data['LapNumber'].dropna()
+                .astype(int).unique().tolist()
+            )
+        return []
 
     @property
     def total_frames(self) -> int:
