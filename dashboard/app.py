@@ -6,6 +6,35 @@ import plotly.graph_objects as go
 from datetime import datetime, timezone
 from PIL import Image
 
+@st.cache_data
+def peek_drivers_and_laps(team: str, race: str, session: str):
+    """
+    Quickly read Driver and LapNumber columns only from
+    the raw CSV to populate selectbox options without
+    loading the full 1.8M row dataset.
+    """
+    import pandas as pd
+    raw_dir = os.path.join(ROOT, 'data', 'raw')
+    # Find matching CSV file
+    target = f"{team}_{race}_{session}.csv"
+    path   = os.path.join(raw_dir, target)
+    if not os.path.exists(path):
+        return [], []
+    try:
+        df = pd.read_csv(
+            path,
+            usecols=lambda c: c in ['Driver', 'LapNumber'],
+        )
+        drivers = sorted(
+            df['Driver'].dropna().unique().tolist()
+        ) if 'Driver' in df.columns else []
+        laps = sorted(
+            df['LapNumber'].dropna().astype(int).unique().tolist()
+        ) if 'LapNumber' in df.columns else []
+        return drivers, laps
+    except Exception:
+        return [], []
+    
 # ── Path setup ───────────────────────────────────────────────────
 ROOT    = os.path.abspath(
     os.path.join(os.path.dirname(__file__), '..')
@@ -211,6 +240,52 @@ with st.sidebar:
              "pace runs, Sprint = short-format Saturday race.",
     )
 
+    # ── Driver + lap selection ────────────────────────────────────
+    available_drivers, available_laps = peek_drivers_and_laps(
+        team, race, session
+    )
+
+    if available_drivers:
+        driver_options  = ['All drivers'] + available_drivers
+        selected_driver = st.selectbox(
+            "Driver",
+            driver_options,
+            format_func=lambda x: (
+                x if x == 'All drivers'
+                else f"🪖 {x}"
+            ),
+            help="Stream data from one specific driver only. "
+                 "Useful for lap-by-lap comparison.",
+        )
+    else:
+        selected_driver = 'All drivers'
+        st.caption("Driver data not available for this selection.")
+
+    if available_laps:
+        lap_options  = ['All laps'] + [str(l) for l in available_laps]
+        selected_lap = st.selectbox(
+            "Lap",
+            lap_options,
+            format_func=lambda x: (
+                x if x == 'All laps'
+                else f"Lap {x}"
+            ),
+            help="Stream data from one specific lap only. "
+                 "Combine with driver for a single-lap trace.",
+        )
+    else:
+        selected_lap = 'All laps'
+        st.caption("Lap data not available for this selection.")
+
+    driver_arg = (
+        None if selected_driver == 'All drivers'
+        else selected_driver
+    )
+    lap_arg = (
+        None if selected_lap == 'All laps'
+        else int(selected_lap)
+    )
+
     n_packets = st.slider(
         "Packets to simulate",
         min_value=10,
@@ -232,10 +307,13 @@ with st.sidebar:
         stop_btn = st.button(
             "⏹ Reset", use_container_width=True,
         )
-
-    if start_btn:
-        with st.spinner("Initialising pipeline..."):
-            feed.initialise(team=team, race=race, session=session)
+        if start_btn:
+            with st.spinner("Initialising pipeline..."):
+                feed.initialise(
+                    team=team, race=race, session=session,
+                    driver=driver_arg, lap=lap_arg,
+                )
+            
             if compare_mode and team_b:
                 feed_b.initialise(
                     team=team_b, race=race, session=session
@@ -303,6 +381,10 @@ with st.sidebar:
     st.markdown(f"- **Team:** {TEAM_CONFIG[team]['name']}")
     st.markdown(f"- **Circuit:** {race}")
     st.markdown(f"- **Session:** {session}")
+    if driver_arg:
+        st.markdown(f"- **Driver:** {driver_arg}")
+    if lap_arg:
+        st.markdown(f"- **Lap:** {lap_arg}")
     rows = feed.get_data_rows()
     if rows > 0:
         st.markdown(f"- **Rows loaded:** {rows:,}")
