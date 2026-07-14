@@ -138,6 +138,8 @@ class TelemetryFeed:
         team:    str = 'mercedes',
         race:    str = 'Bahrain',
         session: str = 'R',
+        driver:  str = None,    
+        lap:     int = None,    
     ) -> None:
         """
         Initialise full pipeline for given team/race/session.
@@ -148,6 +150,7 @@ class TelemetryFeed:
         # ── Sensor + builder + signer ─────────────────────────────
         self._sim = SensorSimulator(
             team=team, race=race, session=session,
+            driver=driver, lap=lap,
             add_noise=False, inject_anomalies=False,
         )
         self._data_rows = (
@@ -233,6 +236,18 @@ class TelemetryFeed:
         self._session_start           = time.time()
         self._stats['start_time']     = time.time()
         self._initialised             = True
+
+    def get_available_drivers(self) -> list:
+        """Driver codes available for selected team/race/session."""
+        if self._sim is not None:
+            return self._sim.available_drivers
+        return []
+
+    def get_available_laps(self) -> list:
+        """Lap numbers available for selected team/race/session."""
+        if self._sim is not None:
+            return self._sim.available_laps
+        return []
 
     def process_one_packet(self) -> Optional[dict]:
         """
