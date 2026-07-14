@@ -4,23 +4,19 @@
 
 # PitCrypt-F1
 
-### Zero-Trust Cryptographic Security Framework  
+### Zero-Trust Cryptographic Security Framework
 ### for FIA-Regulated Formula 1 Telemetry Streams
 
 [![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)](https://python.org)
 [![Rust](https://img.shields.io/badge/Rust-ZKP_Module-orange?logo=rust)](https://rust-lang.org)
-[![Tests](https://img.shields.io/badge/Tests-200%2B_passing-success?logo=pytest)](/)
+[![Tests](https://img.shields.io/badge/Tests-255_passing-success?logo=pytest)](/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 [![Status](https://img.shields.io/badge/Status-Active_Development-blue)](/)
-
-```
 Car Node  ──[X25519 ECDH]──►  Relay Node  ──[X25519 ECDH]──►  FIA Validator
 Ed25519 Sign                  Decrypt                          Verify Ed25519
 ChaCha20 Encrypt              Anomaly Filter                   Sequence Check
 ZKP Commit                    Re-encrypt                       ZKP Verify
-                                                               Audit Log
-```
-
+Audit Log
 </div>
 
 ---
@@ -31,12 +27,14 @@ PitCrypt-F1 is a zero-trust cryptographic security framework that protects
 Formula 1 telemetry data transmitted from car nodes to the FIA validator.
 It implements a three-tier pipeline — car producer, relay node, FIA validator —
 using RFC-standardised cryptographic primitives and real 2025 F1 telemetry
-data sourced via the FastF1 API.
+data sourced via the FastF1 API across five constructors and thirteen circuits.
 
 Every packet is signed, encrypted, anomaly-checked, re-encrypted,
 signature-verified, sequence-checked, and commitment-verified before
 the FIA validator accepts it. The entire decision chain is logged to
-an immutable audit trail.
+an immutable audit trail. A live Streamlit dashboard visualises the
+pipeline in real time, including driver-level telemetry, track position,
+and adversarial attack injection for demonstration purposes.
 
 **This is a Masters application portfolio project demonstrating applied
 cryptographic engineering in a real-world regulated domain.**
@@ -61,15 +59,13 @@ All primitives provide 128-bit security against classical adversaries.
 Constant-time implementations via PyCA `cryptography` library.
 
 ### Pipeline Architecture
-
-```
 ┌─────────────────────────────────────────────────────────────────┐
 │  CAR NODE                                                       │
 │  SensorSimulator → PacketBuilder → PacketSigner → Encryptor    │
 │  Real FastF1 data  64-byte header  Ed25519 sign  ChaCha20      │
 └────────────────────────────┬────────────────────────────────────┘
-                             │  X25519 ECDH (Session A)
-                             ▼
+│  X25519 ECDH (Session A)
+▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  RELAY NODE                                                     │
 │  PacketParser → Decryptor → IntegrityChecker → AnomalyFilter   │
@@ -77,8 +73,8 @@ Constant-time implementations via PyCA `cryptography` library.
 │                             → ReEncryptor                      │
 │                               ChaCha20 (Session B)             │
 └────────────────────────────┬────────────────────────────────────┘
-                             │  X25519 ECDH (Session B)
-                             ▼
+│  X25519 ECDH (Session B)
+▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  FIA VALIDATOR                                                  │
 │  Decrypt → SignatureVerifier → SequenceChecker → ZKPVerifier   │
@@ -86,36 +82,51 @@ Constant-time implementations via PyCA `cryptography` library.
 │             → AuditLogger                                      │
 │               ACCEPT/REJECT/FLAG → JSONL                       │
 └─────────────────────────────────────────────────────────────────┘
-```
-
 ### IAM Zero-Trust Model
-
-```
 car_producer  → produce, sign, encrypt, transmit to relay only
 relay         → receive, decrypt, reencrypt, forward — never sign, never store
 fia_validator → receive, verify, audit log — never produce, never modify
-```
-
 Explicit deny rules. Default deny for unknown nodes. All decisions logged.
 
 ---
 
 ## Real F1 Data
-
-```
 Source:       FastF1 API (official F1 Live Timing data)
-Constructors: Mercedes AMG Petronas · Red Bull Racing
+Constructors: Mercedes AMG · Red Bull Racing · Scuderia Ferrari
+McLaren Racing · Williams Racing
 Circuits:     13 (Bahrain · Saudi Arabia · Australia · Japan ·
-               Monaco · Canada · Singapore · Monza · Silverstone ·
-               Netherlands · Baku · Qatar · Abu Dhabi)
+Monaco · Singapore · Monza · Silverstone ·
+Netherlands · Baku · Qatar · Abu Dhabi · São Paulo)
 Sessions:     Race · Qualifying · Sprint
-Total rows:   1,814,537 telemetry frames
 Channels:     Speed · RPM · Throttle · Brake · nGear · DRS
-```
+Distance · X · Y (track coordinates)
+Anomaly detection thresholds calibrated per constructor from real
+telemetry baselines via `forensic/calibrate_thresholds.py`.
+Statistical baselines computed across all 13 circuits per team.
+Driver-level and lap-level filtering supported in the dashboard.
 
-Anomaly detection thresholds calibrated from this real dataset via
-`forensic/calibrate_thresholds.py`. Statistical baselines computed
-across all 13 circuits per constructor.
+---
+
+## Dashboard Features
+
+The live Streamlit dashboard provides:
+
+- **Real telemetry stream** — driver name, lap number, track position,
+  speed, RPM, throttle, gear per packet
+- **Driver selection** — filter to one specific driver's data
+- **Lap selection** — isolate a single lap for detailed analysis
+- **Dual-axis telemetry chart** — speed (red) and RPM (blue) over
+  packet sequence, independent y-axes with physical range limits
+- **Cryptographic pipeline panel** — live session keys, packet counts,
+  key rotation progress for both ECDH legs
+- **Threat detection panel** — deduplicates consecutive anomaly flags,
+  classifies tamper/replay/IAM/ZKP/signature events
+- **Attack injection** — three live attack types (tamper ciphertext,
+  replay old packet, forge signature) with real-time detection
+- **Side-by-side team comparison** — two independent pipelines,
+  proving cryptographic session isolation between constructors
+- **Immutable audit log** — every validator decision with UTC timestamp
+- **Anomaly statistics** — flag rate, channel breakdown, rejection count
 
 ---
 
@@ -143,8 +154,7 @@ across all 13 circuits per constructor.
 | Delayed replay | ✅ Validator sequence checker |
 | Sequence increment* | ⚠️ Known simulation limitation |
 
-*Sequence increment attack passes at the dict level in simulation.
-In production, the sequence number is embedded in the binary header
+*In production, the sequence number is embedded in the binary header
 and covered by the Ed25519 signature — modification would fail
 signature verification. Documented in `docs/THREAT_MODEL.md`.
 
@@ -163,20 +173,14 @@ signature verification. Documented in `docs/THREAT_MODEL.md`.
 ---
 
 ## Test Coverage
-
-```
 pytest car-producer/tests/ relay-node/tests/ validator-node/tests/ iam-module/tests/ -v
-```
 
-```
 car-producer/tests/    ── 40 tests  ── packet, crypto, signatures
 relay-node/tests/      ── 66 tests  ── parse, decrypt, anomaly, integrity
 validator-node/tests/  ── 60+ tests ── verify, sequence, ZKP
-iam-module/tests/      ── 40+ tests ── RBAC, policy, identity
+iam-module/tests/      ── 90+ tests ── RBAC, policy, identity
 ─────────────────────────────────────────
-Total:                   200+ tests, all passing
-```
-
+Total:                   255 tests, all passing
 ---
 
 ## Quick Start
@@ -202,20 +206,14 @@ pip install -r requirements.txt
 ### Run the Pipeline
 
 ```bash
-# Full validator self-test — 10 packets end-to-end
 python validator-node/src/main.py
 ```
 
 Expected output:
-```
 ✅ ACCEPTED — seq=1  node=mercedes_car team=mercedes
-✅ ACCEPTED — seq=2  node=mercedes_car team=mercedes
 ...
 ✅ ACCEPTED — seq=10 node=mercedes_car team=mercedes
-
 Received: 10 | Accepted: 10 | Rejected: 0
-```
-
 ### Run Attack Simulations
 
 ```bash
@@ -227,33 +225,34 @@ python simulations/iam_breach_sim.py
 ### Run Dashboard
 
 ```bash
-pip install streamlit
+pip install streamlit plotly
 streamlit run dashboard/app.py
 ```
 
 ### Run Tests
 
 ```bash
-pytest car-producer/tests/ relay-node/tests/ validator-node/tests/ -v
+pytest car-producer/tests/ relay-node/tests/ validator-node/tests/ iam-module/tests/ -v
 ```
 
-### Generate Telemetry Data (Optional)
+### Generate Telemetry Data
 
 ```bash
-python forensic/fetch_telemetry.py        # ~20 mins, downloads 56 CSV files
-python forensic/forensic_analysis.py      # Compute baselines
-python forensic/calibrate_thresholds.py  # Derive anomaly thresholds
+python forensic/fetch_telemetry.py          # Mercedes + Red Bull
+python forensic/fetch_one_team.py           # Ferrari / McLaren / Williams (one per hour)
+python forensic/fetch_circuit_corners.py    # Track corner positions
+python forensic/forensic_analysis.py        # Compute per-team baselines
+python forensic/calibrate_thresholds.py     # Derive anomaly thresholds
 ```
 
 ---
 
 ## Project Structure
-
-```
 pitcrypt_f1/
 ├── car-producer/           ← Telemetry production + crypto
 │   ├── src/
-│   │   ├── sensor_simulator.py    ← Real FastF1 telemetry streaming
+│   │   ├── sensor_simulator.py    ← FastF1 telemetry with driver/lap filter
+│   │   ├── corner_lookup.py       ← Nearest-corner lookup via X/Y coordinates
 │   │   ├── packet_builder.py      ← Binary header + JSON payload
 │   │   ├── signer.py              ← Ed25519 signing
 │   │   ├── encryptor.py           ← ChaCha20-Poly1305 encryption
@@ -291,8 +290,10 @@ pitcrypt_f1/
 │   └── config/iam.yaml
 │
 ├── forensic/               ← Real F1 telemetry analysis
-│   ├── fetch_telemetry.py         ← FastF1 data download
-│   ├── forensic_analysis.py       ← Statistical baselines
+│   ├── fetch_telemetry.py         ← Mercedes + Red Bull download
+│   ├── fetch_one_team.py          ← Single-team rate-limit-safe fetch
+│   ├── fetch_circuit_corners.py   ← Per-circuit corner positions
+│   ├── forensic_analysis.py       ← Statistical baselines per team
 │   ├── calibrate_thresholds.py    ← Anomaly threshold derivation
 │   └── visualise_telemetry.py     ← 5 matplotlib visualisations
 │
@@ -314,8 +315,13 @@ pitcrypt_f1/
 │       └── errors.rs
 │
 ├── dashboard/              ← Streamlit security dashboard
-│   ├── app.py
+│   ├── app.py                     ← Main dashboard application
+│   ├── assets/                    ← Logo, favicon, branding
 │   └── components/
+│       ├── telemetry_feed.py      ← Full pipeline wrapper
+│       ├── threat_panel.py        ← Threat classification + dedup
+│       ├── key_rotation_view.py   ← Key rotation monitor
+│       └── audit_log_view.py      ← Audit log viewer + export
 │
 ├── architecture/
 │   └── adr/                ← 5 Architecture Decision Records
@@ -335,10 +341,9 @@ pitcrypt_f1/
 │   └── FORENSIC_ANALYSIS.md
 │
 └── data/                   ← Gitignored — regenerate locally
-    ├── raw/                ← 56 FastF1 CSV files
-    └── processed/          ← Baselines + thresholds
-```
-
+├── raw/                ← Per-team per-circuit CSV files
+├── processed/          ← Baselines + thresholds.json
+└── circuits/           ← Per-circuit corner position JSON
 ---
 
 ## Architecture Decision Records
@@ -378,6 +383,8 @@ pitcrypt_f1/
 | Forensic Analysis | ✅ Complete |
 | Streamlit Dashboard | ✅ Complete |
 | Security Documentation | ✅ Complete |
+| Driver + Lap Selection | ✅ Complete |
+| Track Corner Lookup | 🔄 In Progress |
 | ZKP Rust Module | 🔄 In Progress |
 | Benchmarks | 🔄 Planned |
 | Research Paper | 🔄 Planned |
