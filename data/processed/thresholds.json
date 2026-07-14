@@ -3,76 +3,76 @@
     "Speed": {
       "lower": 0,
       "upper": 380,
-      "mean": 178.7337,
-      "std": 86.1091
+      "mean": 188.7398,
+      "std": 77.0926
     },
     "RPM": {
-      "lower": 1733.6475,
-      "upper": 15500,
-      "mean": 9484.6521,
-      "std": 2583.6682
+      "lower": 4462.8872,
+      "upper": 15368.7613,
+      "mean": 9915.8243,
+      "std": 1817.6457
     },
     "Throttle": {
       "lower": 0,
       "upper": 100,
-      "mean": 54.3416,
-      "std": 42.682
+      "mean": 57.3644,
+      "std": 41.8425
     },
     "Brake": {
       "lower": 0,
       "upper": 1,
-      "mean": 0.1802,
-      "std": 0.3844
+      "mean": 0.1882,
+      "std": 0.3908
     },
     "nGear": {
       "lower": 0,
       "upper": 8,
-      "mean": 4.5556,
-      "std": 2.275
+      "mean": 4.8011,
+      "std": 2.0787
     },
     "DRS": {
       "lower": 0,
       "upper": 14,
-      "mean": 2.9764,
-      "std": 4.0246
+      "mean": 2.6965,
+      "std": 3.9456
     }
   },
   "redbull": {
     "Speed": {
       "lower": 0,
       "upper": 380,
-      "mean": 163.1355,
-      "std": 96.0716
+      "mean": 188.3626,
+      "std": 76.8738
     },
     "RPM": {
-      "lower": 0,
-      "upper": 15500,
-      "mean": 8540.8455,
-      "std": 3617.043
+      "lower": 4325.5998,
+      "upper": 15241.5044,
+      "mean": 9783.5521,
+      "std": 1819.3174
     },
     "Throttle": {
       "lower": 0,
       "upper": 100,
-      "mean": 48.9202,
-      "std": 44.3822
+      "mean": 56.4696,
+      "std": 42.9951
     },
     "Brake": {
       "lower": 0,
       "upper": 1,
-      "mean": 0.1739,
-      "std": 0.379
+      "mean": 0.1965,
+      "std": 0.3974
     },
     "nGear": {
       "lower": 0,
       "upper": 8,
-      "mean": 4.0629,
-      "std": 2.4267
+      "mean": 4.6805,
+      "std": 1.9858
     },
     "DRS": {
       "lower": 0,
       "upper": 14,
-      "mean": 3.318,
-      "std": 4.0689
+      "mean": 2.5927,
+      "std": 3.8839
     }
   },
   "combined": {
@@ -81,8 +81,8 @@
       "upper": 380
     },
     "RPM": {
-      "lower": 0,
-      "upper": 15500
+      "lower": 4325.5998,
+      "upper": 15368.7613
     },
     "Throttle": {
       "lower": 0,
