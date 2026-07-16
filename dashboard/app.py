@@ -1,40 +1,12 @@
 import os
 import sys
 import time
+import json as _json
 import streamlit as st
 import plotly.graph_objects as go
 from datetime import datetime, timezone
 from PIL import Image
 
-@st.cache_data
-def peek_drivers_and_laps(team: str, race: str, session: str):
-    """
-    Quickly read Driver and LapNumber columns only from
-    the raw CSV to populate selectbox options without
-    loading the full 1.8M row dataset.
-    """
-    import pandas as pd
-    raw_dir = os.path.join(ROOT, 'data', 'raw')
-    # Find matching CSV file
-    target = f"{team}_{race}_{session}.csv"
-    path   = os.path.join(raw_dir, target)
-    if not os.path.exists(path):
-        return [], []
-    try:
-        df = pd.read_csv(
-            path,
-            usecols=lambda c: c in ['Driver', 'LapNumber'],
-        )
-        drivers = sorted(
-            df['Driver'].dropna().unique().tolist()
-        ) if 'Driver' in df.columns else []
-        laps = sorted(
-            df['LapNumber'].dropna().astype(int).unique().tolist()
-        ) if 'LapNumber' in df.columns else []
-        return drivers, laps
-    except Exception:
-        return [], []
-    
 # ── Path setup ───────────────────────────────────────────────────
 ROOT    = os.path.abspath(
     os.path.join(os.path.dirname(__file__), '..')
@@ -62,6 +34,36 @@ TEAM_CONFIG = {
 }
 
 TEAMS_WITHOUT_DATA = set()
+
+# ── peek_drivers_and_laps must be defined AFTER ROOT ─────────────
+@st.cache_data
+def peek_drivers_and_laps(team: str, race: str, session: str):
+    """
+    Quickly read Driver and LapNumber columns only from
+    the raw CSV to populate selectbox options without
+    loading the full dataset.
+    """
+    import pandas as pd
+    raw_dir = os.path.join(ROOT, 'data', 'raw')
+    target  = f"{team}_{race}_{session}.csv"
+    path    = os.path.join(raw_dir, target)
+    if not os.path.exists(path):
+        return [], []
+    try:
+        df = pd.read_csv(
+            path,
+            usecols=lambda c: c in ['Driver', 'LapNumber'],
+        )
+        drivers = sorted(
+            df['Driver'].dropna().unique().tolist()
+        ) if 'Driver' in df.columns else []
+        laps = sorted(
+            df['LapNumber'].dropna().astype(int).unique().tolist()
+        ) if 'LapNumber' in df.columns else []
+        return drivers, laps
+    except Exception:
+        return [], []
+
 
 # ── Page config ───────────────────────────────────────────────────
 try:
@@ -134,6 +136,8 @@ def init_session_state():
         st.session_state.packets_processed = 0
     if 'start_time' not in st.session_state:
         st.session_state.start_time = None
+    if 'run_history' not in st.session_state:
+        st.session_state.run_history = []
 
 init_session_state()
 feed         = st.session_state.feed
@@ -208,17 +212,7 @@ with st.sidebar:
              "complete cryptographic isolation between constructors.",
     )
 
-    team_b = None
-    if compare_mode:
-        team_b = st.selectbox(
-            "Second Constructor",
-            [t for t in TEAM_CONFIG.keys() if t != team],
-            format_func=lambda x: (
-                f"{TEAM_CONFIG[x]['emoji']} {TEAM_CONFIG[x]['name']}"
-            ),
-            key='team_b_select',
-        )
-
+    # ── Circuit and session MUST come before team B driver/lap ────
     race = st.selectbox(
         "Circuit",
         [
@@ -240,42 +234,36 @@ with st.sidebar:
              "pace runs, Sprint = short-format Saturday race.",
     )
 
-    # ── Driver + lap selection ────────────────────────────────────
+    # ── Team A — driver + lap ─────────────────────────────────────
     available_drivers, available_laps = peek_drivers_and_laps(
         team, race, session
     )
 
     if available_drivers:
-        driver_options  = ['All drivers'] + available_drivers
         selected_driver = st.selectbox(
             "Driver",
-            driver_options,
+            ['All drivers'] + available_drivers,
             format_func=lambda x: (
-                x if x == 'All drivers'
-                else f"🪖 {x}"
+                x if x == 'All drivers' else f"🪖 {x}"
             ),
-            help="Stream data from one specific driver only. "
-                 "Useful for lap-by-lap comparison.",
+            help="Stream data from one specific driver only.",
         )
     else:
         selected_driver = 'All drivers'
-        st.caption("Driver data not available for this selection.")
+        st.caption("No driver data for this selection.")
 
     if available_laps:
-        lap_options  = ['All laps'] + [str(l) for l in available_laps]
         selected_lap = st.selectbox(
             "Lap",
-            lap_options,
+            ['All laps'] + [str(l) for l in available_laps],
             format_func=lambda x: (
-                x if x == 'All laps'
-                else f"Lap {x}"
+                x if x == 'All laps' else f"Lap {x}"
             ),
-            help="Stream data from one specific lap only. "
-                 "Combine with driver for a single-lap trace.",
+            help="Stream data from one specific lap only.",
         )
     else:
         selected_lap = 'All laps'
-        st.caption("Lap data not available for this selection.")
+        st.caption("No lap data for this selection.")
 
     driver_arg = (
         None if selected_driver == 'All drivers'
@@ -286,14 +274,73 @@ with st.sidebar:
         else int(selected_lap)
     )
 
+    # ── Team B — shown only in compare mode ───────────────────────
+    team_b       = None
+    driver_b_arg = None
+    lap_b_arg    = None
+
+    if compare_mode:
+        st.markdown("---")
+        st.markdown("**Second Constructor**")
+
+        team_b = st.selectbox(
+            "Constructor (Team B)",
+            [t for t in TEAM_CONFIG.keys() if t != team],
+            format_func=lambda x: (
+                f"{TEAM_CONFIG[x]['emoji']} {TEAM_CONFIG[x]['name']}"
+            ),
+            key='team_b_select',
+        )
+
+        b_drivers, b_laps = peek_drivers_and_laps(
+            team_b, race, session
+        )
+
+        if b_drivers:
+            selected_driver_b = st.selectbox(
+                "Driver (Team B)",
+                ['All drivers'] + b_drivers,
+                format_func=lambda x: (
+                    x if x == 'All drivers' else f"🪖 {x}"
+                ),
+                key='driver_b_select',
+                help="Driver filter for the second constructor.",
+            )
+        else:
+            selected_driver_b = 'All drivers'
+
+        if b_laps:
+            selected_lap_b = st.selectbox(
+                "Lap (Team B)",
+                ['All laps'] + [str(l) for l in b_laps],
+                format_func=lambda x: (
+                    x if x == 'All laps' else f"Lap {x}"
+                ),
+                key='lap_b_select',
+                help="Lap filter for the second constructor.",
+            )
+        else:
+            selected_lap_b = 'All laps'
+
+        driver_b_arg = (
+            None if selected_driver_b == 'All drivers'
+            else selected_driver_b
+        )
+        lap_b_arg = (
+            None if selected_lap_b == 'All laps'
+            else int(selected_lap_b)
+        )
+        st.markdown("---")
+
     n_packets = st.slider(
         "Packets to simulate",
         min_value=10,
         max_value=200,
         value=50,
         step=10,
-        help="Each packet = one telemetry sample at one instant in "
-             "time. 50 packets ≈ a few seconds of real on-track data.",
+        help="Each packet = one telemetry sample at one instant "
+             "in time. 50 packets ≈ a few seconds of real on-track "
+             "data.",
     )
 
     st.divider()
@@ -307,16 +354,17 @@ with st.sidebar:
         stop_btn = st.button(
             "⏹ Reset", use_container_width=True,
         )
-        if start_btn:
-            with st.spinner("Initialising pipeline..."):
-                feed.initialise(
-                    team=team, race=race, session=session,
-                    driver=driver_arg, lap=lap_arg,
-                )
-            
+
+    if start_btn:
+        with st.spinner("Initialising pipeline..."):
+            feed.initialise(
+                team=team, race=race, session=session,
+                driver=driver_arg, lap=lap_arg,
+            )
             if compare_mode and team_b:
                 feed_b.initialise(
-                    team=team_b, race=race, session=session
+                    team=team_b, race=race, session=session,
+                    driver=driver_b_arg, lap=lap_b_arg,
                 )
             threat_panel.reset()
             st.session_state.running    = True
@@ -357,8 +405,8 @@ with st.sidebar:
                     )
                 else:
                     st.warning(
-                        f"⚠️ Attack slipped through — {attack_type} "
-                        f"→ {attack_result['decision']}"
+                        f"⚠️ Attack slipped through — {attack_type}"
+                        f" → {attack_result['decision']}"
                     )
             else:
                 st.info(
@@ -391,10 +439,7 @@ with st.sidebar:
 
 
 def render_telemetry_column(feed_obj, team_key, label):
-    """Render one team's telemetry column including
-    live stream, dual-axis chart, and crypto summary."""
-
-    team_color = TEAM_CONFIG[team_key]['color']
+    """Render one team's telemetry column."""
 
     st.markdown(
         f'<div class="pipeline-header">'
@@ -411,7 +456,6 @@ def render_telemetry_column(feed_obj, team_key, label):
             lap       = payload.get('lap', 0)
             track_pos = payload.get('track_position', '')
             decision  = pkt.get('decision', 'ACCEPT')
-
             badge_map = {
                 'ACCEPT': '<span class="accept-badge">ACCEPT</span>',
                 'REJECT': '<span class="reject-badge">REJECT</span>',
@@ -422,10 +466,7 @@ def render_telemetry_column(feed_obj, team_key, label):
             rpm      = payload.get('RPM',      0)
             throttle = payload.get('Throttle', 0)
             gear     = payload.get('nGear',    0)
-
-            # Build position label — only show if non-empty
             pos_label = f" · **{track_pos}**" if track_pos else ""
-
             st.markdown(
                 f"{badge} `seq={seq:04d}` "
                 f"**[{driver}]** Lap **{lap}**{pos_label} · "
@@ -438,39 +479,28 @@ def render_telemetry_column(feed_obj, team_key, label):
     else:
         st.info("No packets yet")
 
-    # ── Dual-axis telemetry trace chart ───────────────────────────
     history = feed_obj.get_chart_history()
     if history['seq']:
         fig = go.Figure()
-
-        # Speed — team colour, left axis
         fig.add_trace(go.Scatter(
-            x=history['seq'],
-            y=history['speed'],
+            x=history['seq'], y=history['speed'],
             name='Speed (km/h)',
             line=dict(color='#e10600', width=3),
             yaxis='y1',
         ))
-
-        # RPM — electric blue, right axis (raw values, own scale)
         fig.add_trace(go.Scatter(
-            x=history['seq'],
-            y=history['rpm'],
+            x=history['seq'], y=history['rpm'],
             name='RPM',
             line=dict(color='#00d4ff', width=2),
             yaxis='y2',
         ))
-
         fig.update_layout(
             height=220,
             margin=dict(l=10, r=60, t=30, b=10),
             plot_bgcolor='#0a0a0a',
             paper_bgcolor='#0a0a0a',
             font=dict(color='#ffffff', size=9),
-            xaxis=dict(
-                title='Packet sequence',
-                gridcolor='#222',
-            ),
+            xaxis=dict(title='Packet sequence', gridcolor='#222'),
             yaxis=dict(
                 title='Speed (km/h)',
                 title_font=dict(color='#e10600'),
@@ -491,7 +521,6 @@ def render_telemetry_column(feed_obj, team_key, label):
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    # ── Crypto summary line ───────────────────────────────────────
     crypto = feed_obj.get_crypto_stats()
     st.markdown(
         f'<span class="crypto-ok">✅</span> '
@@ -508,7 +537,6 @@ if not st.session_state.running:
         "👈 Select a constructor and circuit, "
         "then click **▶ Start** to begin the simulation."
     )
-
     st.markdown("### How it works")
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -532,6 +560,119 @@ if not st.session_state.running:
             "and ZKP commitment. "
             "Logs every decision to audit trail."
         )
+
+    # ── Run history visible even when idle ────────────────────────
+    if st.session_state.run_history:
+        st.divider()
+        st.markdown(
+            f"### 📜 Saved Runs "
+            f"({len(st.session_state.run_history)})"
+        )
+        for idx, run in enumerate(
+            reversed(st.session_state.run_history)
+        ):
+            run_num = len(st.session_state.run_history) - idx
+            with st.expander(
+                f"Run {run_num} — {run.get('label', 'Untitled')} "
+                f"· {run['timestamp']}",
+                expanded=False,
+            ):
+                col_l, col_r = st.columns([2, 3])
+                with col_l:
+                    team_label = run['team']
+                    if run.get('team_b'):
+                        team_label += f" vs {run['team_b']}"
+                    st.markdown(f"🏎️ **{team_label}**")
+                    session_map = {'R': 'Race', 'Q': 'Qualifying', 'S': 'Sprint'}
+                    st.markdown(
+                        f"📍 {run['race']} · {session_map.get(run['session'], run['session'])}"
+)
+                    st.markdown(
+                        f"👤 {run['driver']} · Lap {run['lap']}"
+                    )
+                    st.markdown(
+                        f"📦 **{run['packets']}** pkts · "
+                        f"✅ {run['accepted']} "
+                        f"({run['accept_rate']}) · "
+                        f"🚨 {run['rejected']} · "
+                        f"⚠️ {run['flagged']}"
+                    )
+                    st.markdown(f"⚡ {run['throughput']}")
+                    ts = run.get('threat_stats', {})
+                    if ts.get('total_threats', 0) > 0:
+                        st.markdown(
+                            f"🔴 replay={ts.get('replays',0)} "
+                            f"tamper={ts.get('tampers',0)} "
+                            f"anomaly={ts.get('anomalies',0)}"
+                        )
+
+                    # Export button per saved run
+                    export_data = _json.dumps({
+                        'run_info':   {
+                            k: v for k, v in run.items()
+                            if k != 'chart_history'
+                        },
+                        'chart_data': run.get('chart_history', {}),
+                        'audit_events': run.get('audit_events', []),
+                    }, indent=2)
+                    fname = (
+                        f"pitcrypt_"
+                        f"{run['team'].replace(' ','_')}_"
+                        f"{run['race']}_"
+                        f"run{run_num}.json"
+                    )
+                    st.download_button(
+                        label="⬇ Export JSON",
+                        data=export_data,
+                        file_name=fname,
+                        mime='application/json',
+                        key=f"export_{run_num}",
+                    )
+
+                with col_r:
+                    h = run.get('chart_history', {})
+                    if h.get('seq'):
+                        fig_h = go.Figure()
+                        fig_h.add_trace(go.Scatter(
+                            x=h['seq'], y=h['speed'],
+                            name='Speed',
+                            line=dict(color='#e10600', width=2),
+                            yaxis='y1',
+                        ))
+                        fig_h.add_trace(go.Scatter(
+                            x=h['seq'], y=h['rpm'],
+                            name='RPM',
+                            line=dict(color='#00d4ff', width=1),
+                            yaxis='y2',
+                        ))
+                        fig_h.update_layout(
+                            height=140,
+                            margin=dict(l=0, r=40, t=0, b=0),
+                            plot_bgcolor='#0a0a0a',
+                            paper_bgcolor='#0a0a0a',
+                            showlegend=False,
+                            xaxis=dict(gridcolor='#111'),
+                            yaxis=dict(
+                                range=[0, 380],
+                                tickfont=dict(
+                                    color='#e10600', size=8
+                                ),
+                                gridcolor='#111',
+                            ),
+                            yaxis2=dict(
+                                overlaying='y', side='right',
+                                range=[0, 16000],
+                                tickfont=dict(
+                                    color='#00d4ff', size=8
+                                ),
+                                showgrid=False,
+                            ),
+                        )
+                        st.plotly_chart(
+                            fig_h,
+                            use_container_width=True,
+                            key=f"hist_{run_num}",
+                        )
 
 else:
     progress = st.progress(0, text="Running pipeline...")
@@ -566,29 +707,25 @@ else:
         st.metric(
             "✅ Accepted", stats['accepted'],
             delta=f"{stats['accept_rate']:.1%}",
-            help="Packets that passed all cryptographic checks "
-                 "— signature, sequence, and ZKP commitment.",
+            help="Packets that passed all cryptographic checks.",
         )
     with m3:
         st.metric(
             "🚨 Rejected", stats['rejected'],
             delta_color="inverse",
-            help="Packets blocked due to tampering, "
-                 "replay, or forged signatures.",
+            help="Packets blocked due to tampering or replay.",
         )
     with m4:
         st.metric(
             "⚠️ Flagged", stats['flagged'],
-            help="Accepted packets with statistically "
-                 "unusual sensor values.",
+            help="Accepted packets with unusual sensor values.",
         )
     with m5:
         st.metric("🔑 Key Rotations", stats['key_rotations'])
     with m6:
         st.metric(
             "⚡ pkt/s", f"{throughput:.0f}",
-            help="Packets processed per second through "
-                 "the full cryptographic pipeline.",
+            help="Packets per second through full pipeline.",
         )
 
     st.divider()
@@ -727,6 +864,65 @@ else:
             )
 
     st.divider()
+
+    # ── Save prompt ───────────────────────────────────────────────
+    st.markdown("#### 💾 Save This Run?")
+    save_col, skip_col, label_col = st.columns([1, 1, 3])
+    with save_col:
+        save_btn = st.button(
+            "⭐ Save Run",
+            use_container_width=True,
+            type="primary",
+        )
+    with skip_col:
+        st.button("Skip", use_container_width=True)
+    with label_col:
+        run_label = st.text_input(
+            "Label",
+            placeholder=(
+                f"e.g. {driver_arg or 'All'} "
+                f"Lap {lap_arg or 'All'} "
+                f"{race} — attack demo"
+            ),
+            label_visibility="collapsed",
+        )
+
+    if save_btn:
+        record = {
+            'label':         run_label or (
+                f"{TEAM_CONFIG[team]['name']} · "
+                f"{race} · "
+                f"{driver_arg or 'All drivers'} · "
+                f"Lap {lap_arg or 'All'}"
+            ),
+            'timestamp':     datetime.now(timezone.utc).strftime(
+                '%H:%M:%S UTC'
+            ),
+            'team':          TEAM_CONFIG[team]['name'],
+            'team_b':        (
+                TEAM_CONFIG[team_b]['name']
+                if (compare_mode and team_b) else None
+            ),
+            'race':          race,
+            'session':       session,
+            'driver':        driver_arg or 'All',
+            'lap':           str(lap_arg) if lap_arg else 'All',
+            'packets':       stats['total'],
+            'accepted':      stats['accepted'],
+            'rejected':      stats['rejected'],
+            'flagged':       stats['flagged'],
+            'accept_rate':   f"{stats['accept_rate']:.1%}",
+            'throughput':    f"{throughput:.0f} pkt/s",
+            'chart_history': feed.get_chart_history(),
+            'threat_stats':  threat_panel.get_stats(),
+            'audit_events':  feed.get_audit_events(limit=50),
+        }
+        st.session_state.run_history.append(record)
+        if len(st.session_state.run_history) > 20:
+            st.session_state.run_history.pop(0)
+        st.success(f"✅ Saved: {record['label']}")
+
+    st.divider()
     col_refresh, col_info = st.columns([1, 4])
     with col_refresh:
         if st.button("🔄 Run More Packets"):
@@ -736,5 +932,6 @@ else:
         st.caption(
             f"Session started: "
             f"{datetime.fromtimestamp(start_ts, tz=timezone.utc).strftime('%H:%M:%S UTC') if start_ts else '—'}"
-            f" · Total processed: {st.session_state.packets_processed}"
+            f" · Total processed: "
+            f"{st.session_state.packets_processed}"
         )
