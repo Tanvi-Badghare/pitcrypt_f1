@@ -6,6 +6,7 @@ import streamlit as st
 import plotly.graph_objects as go
 from datetime import datetime, timezone
 from PIL import Image
+from typing import Optional
 
 # ── Path setup ───────────────────────────────────────────────────
 ROOT    = os.path.abspath(
@@ -446,7 +447,6 @@ def render_telemetry_column(feed_obj, team_key, label):
         f'🚗 {label} — Live Telemetry</div>',
         unsafe_allow_html=True,
     )
-
     recent = feed_obj.get_recent_packets(limit=15)
     if recent:
         for pkt in reversed(recent[-15:]):
@@ -521,6 +521,17 @@ def render_telemetry_column(feed_obj, team_key, label):
         )
         st.plotly_chart(fig, use_container_width=True)
 
+    # ── Live track map ───────────────────────────────────────────
+    # race variable comes from outer scope (sidebar selectbox)
+    track_fig = build_track_map(feed_obj, race, team_key)
+    if track_fig is not None:
+        st.plotly_chart(
+            track_fig,
+            use_container_width=True,
+            key=f"track_map_{team_key}_{id(feed_obj)}",
+        )
+
+    # ── Crypto summary line ───────────────────────────────────────
     crypto = feed_obj.get_crypto_stats()
     st.markdown(
         f'<span class="crypto-ok">✅</span> '
@@ -529,6 +540,146 @@ def render_telemetry_column(feed_obj, team_key, label):
         f'ZKP verified: **{crypto["zkp_verified"]}**',
         unsafe_allow_html=True,
     )
+
+
+def build_track_map(
+    feed_obj,
+    race: str,
+    team_key: str,
+) -> Optional[go.Figure]:
+    """
+    Build a live track position map for the given circuit.
+    Shows circuit outline from corner positions,
+    car position coloured by speed, and corner labels.
+    Returns None if no corner data or no packets yet.
+    """
+    import json
+
+    # ── Load corner data ─────────────────────────────────────────
+    corner_path = os.path.join(
+        ROOT, 'data', 'circuits', f"{race}_corners.json"
+    )
+    if not os.path.exists(corner_path):
+        return None
+
+    with open(corner_path, encoding='utf-8') as f:
+        circuit_data = json.load(f)
+    corners = circuit_data.get('corners', [])
+    if not corners:
+        return None
+
+    # ── Get recent telemetry positions ────────────────────────────
+    recent = feed_obj.get_recent_packets(limit=50)
+    if not recent:
+        return None
+
+    # Extract X, Y, Speed from payload_json
+    xs, ys, speeds = [], [], []
+    for pkt in recent:
+        payload = pkt.get('payload_json', {})
+        x = payload.get('X', None)
+        y = payload.get('Y', None)
+        s = payload.get('Speed', 0)
+        if x is not None and y is not None:
+            xs.append(x)
+            ys.append(y)
+            speeds.append(s)
+
+    if not xs:
+        return None
+
+    team_color = TEAM_CONFIG[team_key]['color']
+
+    fig = go.Figure()
+
+    # ── Circuit outline — connect corners in order ────────────────
+    cx = [c['x'] for c in corners] + [corners[0]['x']]
+    cy = [c['y'] for c in corners] + [corners[0]['y']]
+    fig.add_trace(go.Scatter(
+        x=cx, y=cy,
+        mode='lines',
+        line=dict(color='#333333', width=8),
+        name='Circuit',
+        hoverinfo='skip',
+    ))
+
+    # ── Telemetry trail — colour by speed ────────────────────────
+    fig.add_trace(go.Scatter(
+        x=xs, y=ys,
+        mode='lines+markers',
+        marker=dict(
+            size=6,
+            color=speeds,
+            colorscale=[
+                [0.0,  '#0000ff'],   # slow = blue
+                [0.5,  '#ffff00'],   # mid  = yellow
+                [1.0,  '#ff0000'],   # fast = red
+            ],
+            cmin=0,
+            cmax=350,
+            colorbar=dict(
+                title=dict(
+                    text='Speed<br>(km/h)',
+                    font=dict(color='#ffffff', size=9),
+                ),
+                thickness=12,
+                len=0.6,
+                tickfont=dict(color='#ffffff', size=9),
+            ),
+            showscale=True,
+        ),
+        line=dict(color='rgba(255,255,255,0.3)', width=2),
+        name='Telemetry trail',
+        hovertemplate='%{text}<extra></extra>',
+        text=[f'{s:.0f} km/h' for s in speeds],
+    ))
+
+    # ── Current position — latest packet ─────────────────────────
+    fig.add_trace(go.Scatter(
+        x=[xs[-1]], y=[ys[-1]],
+        mode='markers',
+        marker=dict(
+            size=14,
+            color=team_color,
+            symbol='circle',
+            line=dict(color='white', width=2),
+        ),
+        name='Current position',
+        hovertemplate=f'Current: {speeds[-1]:.0f} km/h<extra></extra>',
+    ))
+
+    # ── Corner labels ─────────────────────────────────────────────
+    for c in corners:
+        label = f"T{c['number']}{c.get('letter','').strip()}"
+        fig.add_annotation(
+            x=c['x'], y=c['y'],
+            text=label,
+            showarrow=False,
+            font=dict(color='#888888', size=8),
+            bgcolor='rgba(0,0,0,0)',
+        )
+
+    fig.update_layout(
+        height=350,
+        margin=dict(l=0, r=0, t=30, b=0),
+        plot_bgcolor='#0a0a0a',
+        paper_bgcolor='#0a0a0a',
+        font=dict(color='#ffffff'),
+        title=dict(
+            text=f'🗺️ {race} — Live Position',
+            font=dict(color=team_color, size=13),
+            x=0,
+        ),
+        xaxis=dict(
+            visible=False,
+            scaleanchor='y',
+            scaleratio=1,
+        ),
+        yaxis=dict(visible=False),
+        showlegend=False,
+    )
+
+    return fig
 
 
 # ── Main content ──────────────────────────────────────────────────
