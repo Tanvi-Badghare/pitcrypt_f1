@@ -5,8 +5,8 @@ import json as _json
 import streamlit as st
 import plotly.graph_objects as go
 from datetime import datetime, timezone
-from PIL import Image
 from typing import Optional
+from PIL import Image
 
 # ── Path setup ───────────────────────────────────────────────────
 ROOT    = os.path.abspath(
@@ -36,14 +36,10 @@ TEAM_CONFIG = {
 
 TEAMS_WITHOUT_DATA = set()
 
-# ── peek_drivers_and_laps must be defined AFTER ROOT ─────────────
+
+# ── Cached helpers ────────────────────────────────────────────────
 @st.cache_data
 def peek_drivers_and_laps(team: str, race: str, session: str):
-    """
-    Quickly read Driver and LapNumber columns only from
-    the raw CSV to populate selectbox options without
-    loading the full dataset.
-    """
     import pandas as pd
     raw_dir = os.path.join(ROOT, 'data', 'raw')
     target  = f"{team}_{race}_{session}.csv"
@@ -64,6 +60,52 @@ def peek_drivers_and_laps(team: str, race: str, session: str):
         return drivers, laps
     except Exception:
         return [], []
+
+
+@st.cache_data
+def load_circuit_outline(race: str, team: str) -> tuple:
+    """
+    Load one reference lap's X/Y coordinates to draw
+    the real circuit shape. Tries multiple teams/sessions
+    until it finds usable data.
+    Cached so it only loads once per race/team combo.
+    """
+    import pandas as pd
+    raw_dir = os.path.join(ROOT, 'data', 'raw')
+
+    for t in [team, 'mercedes', 'ferrari', 'redbull',
+              'mclaren', 'williams']:
+        for sess in ['R', 'Q']:
+            fname = f"{t}_{race}_{sess}.csv"
+            path  = os.path.join(raw_dir, fname)
+            if not os.path.exists(path):
+                continue
+            try:
+                df = pd.read_csv(
+                    path,
+                    usecols=lambda c: c in [
+                        'X', 'Y', 'LapNumber'
+                    ],
+                )
+                if 'X' not in df.columns or 'Y' not in df.columns:
+                    continue
+                if 'LapNumber' in df.columns:
+                    min_lap = df['LapNumber'].min()
+                    lap1    = df[df['LapNumber'] == min_lap]
+                    if len(lap1) > 100:
+                        return (
+                            lap1['X'].tolist(),
+                            lap1['Y'].tolist(),
+                        )
+                sample = df.head(800)
+                if len(sample) > 50:
+                    return (
+                        sample['X'].tolist(),
+                        sample['Y'].tolist(),
+                    )
+            except Exception:
+                continue
+    return [], []
 
 
 # ── Page config ───────────────────────────────────────────────────
@@ -123,6 +165,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+
 # ── Session state ─────────────────────────────────────────────────
 def init_session_state():
     if 'feed' not in st.session_state:
@@ -140,6 +183,7 @@ def init_session_state():
     if 'run_history' not in st.session_state:
         st.session_state.run_history = []
 
+
 init_session_state()
 feed         = st.session_state.feed
 feed_b       = st.session_state.feed_b
@@ -147,14 +191,11 @@ threat_panel = st.session_state.threat_panel
 
 # ── Header ────────────────────────────────────────────────────────
 col_logo, col_title, col_status = st.columns([1, 4, 2])
-
 with col_logo:
     st.markdown("# 🏎️")
-
 with col_title:
     st.markdown("## PitCrypt-F1 Security Dashboard")
     st.markdown("*Zero-Trust Cryptographic Telemetry Pipeline*")
-
 with col_status:
     pipeline_status = feed.get_pipeline_status()
     status_color    = "🟢" if pipeline_status == "ACTIVE" else "🔴"
@@ -170,13 +211,14 @@ with st.expander("ℹ️ What do these numbers mean?"):
     - **Speed** — car speed in km/h at this exact moment on track
     - **RPM** — engine revolutions per minute; how hard the engine is working
     - **Throttle %** — how much the driver is pressing the accelerator (100% = flat out)
-    - **Gear** — current gearbox position (1 = lowest/slowest, 8 = highest/fastest)
+    - **Gear** — gearbox position (1 = lowest/slowest, 8 = highest/fastest)
     - **seq=XXXX** — packet sequence number; proves no data was skipped or replayed
     - **ACCEPT** — FIA validator confirmed this packet is authentic and unmodified
     - **REJECT** — packet blocked; tampered, replayed, or forged
     - **FLAG** — packet accepted but contains a statistically unusual sensor value
-    - **Session key** — a one-time cryptographic secret used to encrypt the data stream
+    - **Session key** — one-time cryptographic secret used to encrypt the data stream
     - **ECDH** — how both sides agree on that secret without ever sending it directly
+    - **→T4** — car is approaching Turn 4; **T4** — car is at the apex of Turn 4
     """)
 
 # ── Sidebar ───────────────────────────────────────────────────────
@@ -202,18 +244,15 @@ with st.sidebar:
     if team in TEAMS_WITHOUT_DATA:
         st.warning(
             f"⚠️ {TEAM_CONFIG[team]['name']} CSV data not yet "
-            f"downloaded. Using Mercedes telemetry values — "
-            f"full cryptographic pipeline still active.",
+            f"downloaded. Full cryptographic pipeline still active.",
         )
 
     compare_mode = st.checkbox(
         "⚖️ Compare two teams side-by-side",
-        help="Run two independent encrypted pipelines simultaneously. "
-             "Each team gets its own ECDH session keys, proving "
-             "complete cryptographic isolation between constructors.",
+        help="Run two independent encrypted pipelines simultaneously.",
     )
 
-    # ── Circuit and session MUST come before team B driver/lap ────
+    # ── Circuit + session MUST come before team B ─────────────────
     race = st.selectbox(
         "Circuit",
         [
@@ -231,11 +270,10 @@ with st.sidebar:
         format_func=lambda x: {
             "R": "Race", "Q": "Qualifying", "S": "Sprint"
         }[x],
-        help="Race = full grand prix, Qualifying = single-lap "
-             "pace runs, Sprint = short-format Saturday race.",
+        help="Race / Qualifying / Sprint session.",
     )
 
-    # ── Team A — driver + lap ─────────────────────────────────────
+    # ── Team A driver + lap ───────────────────────────────────────
     available_drivers, available_laps = peek_drivers_and_laps(
         team, race, session
     )
@@ -247,7 +285,7 @@ with st.sidebar:
             format_func=lambda x: (
                 x if x == 'All drivers' else f"🪖 {x}"
             ),
-            help="Stream data from one specific driver only.",
+            help="Filter to one specific driver's data.",
         )
     else:
         selected_driver = 'All drivers'
@@ -260,7 +298,7 @@ with st.sidebar:
             format_func=lambda x: (
                 x if x == 'All laps' else f"Lap {x}"
             ),
-            help="Stream data from one specific lap only.",
+            help="Filter to one specific lap only.",
         )
     else:
         selected_lap = 'All laps'
@@ -275,7 +313,7 @@ with st.sidebar:
         else int(selected_lap)
     )
 
-    # ── Team B — shown only in compare mode ───────────────────────
+    # ── Team B ────────────────────────────────────────────────────
     team_b       = None
     driver_b_arg = None
     lap_b_arg    = None
@@ -283,7 +321,6 @@ with st.sidebar:
     if compare_mode:
         st.markdown("---")
         st.markdown("**Second Constructor**")
-
         team_b = st.selectbox(
             "Constructor (Team B)",
             [t for t in TEAM_CONFIG.keys() if t != team],
@@ -305,7 +342,6 @@ with st.sidebar:
                     x if x == 'All drivers' else f"🪖 {x}"
                 ),
                 key='driver_b_select',
-                help="Driver filter for the second constructor.",
             )
         else:
             selected_driver_b = 'All drivers'
@@ -318,7 +354,6 @@ with st.sidebar:
                     x if x == 'All laps' else f"Lap {x}"
                 ),
                 key='lap_b_select',
-                help="Lap filter for the second constructor.",
             )
         else:
             selected_lap_b = 'All laps'
@@ -336,12 +371,11 @@ with st.sidebar:
     n_packets = st.slider(
         "Packets to simulate",
         min_value=10,
-        max_value=200,
-        value=50,
+        max_value=500,
+        value=100,
         step=10,
-        help="Each packet = one telemetry sample at one instant "
-             "in time. 50 packets ≈ a few seconds of real on-track "
-             "data.",
+        help="Each packet = one telemetry sample. "
+             "500 packets ≈ half a lap on the track map.",
     )
 
     st.divider()
@@ -391,8 +425,7 @@ with st.sidebar:
             'replay': '🔁 Replay Old Packet',
             'forge':  '✍️ Forge Signature',
         }[x],
-        help="Inject one malicious packet into the live pipeline "
-             "and watch the security layer catch it in real time.",
+        help="Inject one malicious packet and watch the pipeline catch it.",
     )
     if st.button("💀 Inject Attack", use_container_width=True):
         if st.session_state.running:
@@ -411,8 +444,8 @@ with st.sidebar:
                     )
             else:
                 st.info(
-                    "No prior packet available to replay. "
-                    "Run at least one packet batch first."
+                    "No prior packet to replay. "
+                    "Run at least one batch first."
                 )
         else:
             st.warning("Start the pipeline first.")
@@ -439,14 +472,174 @@ with st.sidebar:
         st.markdown(f"- **Rows loaded:** {rows:,}")
 
 
-def render_telemetry_column(feed_obj, team_key, label):
-    """Render one team's telemetry column."""
+# ── Track map builder ─────────────────────────────────────────────
+def build_track_map(
+    feed_obj,
+    race: str,
+    team_key: str,
+) -> Optional[go.Figure]:
+    """
+    Build live track position map using real telemetry
+    X/Y for circuit outline — no straight-line artefacts.
+    """
+    corner_path = os.path.join(
+        ROOT, 'data', 'circuits', f"{race}_corners.json"
+    )
+    corners = []
+    if os.path.exists(corner_path):
+        with open(corner_path, encoding='utf-8') as f:
+            corners = _json.load(f).get('corners', [])
 
+    recent = feed_obj.get_recent_packets(limit=500)
+    if not recent:
+        return None
+
+    xs, ys, speeds = [], [], []
+    for pkt in recent:
+        payload = pkt.get('payload_json', {})
+        x = payload.get('X', None)
+        y = payload.get('Y', None)
+        s = payload.get('Speed', 0)
+        if x is not None and y is not None:
+            xs.append(float(x))
+            ys.append(float(y))
+            speeds.append(float(s))
+
+    if not xs:
+        return None
+
+    team_color = TEAM_CONFIG[team_key]['color']
+    fig        = go.Figure()
+
+    # ── Circuit outline from real telemetry ───────────────────────
+    outline_x, outline_y = load_circuit_outline(race, team_key)
+    if outline_x:
+        # Thick dark background track
+        fig.add_trace(go.Scatter(
+            x=outline_x, y=outline_y,
+            mode='lines',
+            line=dict(color='#1a1a1a', width=20),
+            name='Track bg',
+            hoverinfo='skip',
+        ))
+        # Grey track surface
+        fig.add_trace(go.Scatter(
+            x=outline_x, y=outline_y,
+            mode='lines',
+            line=dict(color='#3a3a3a', width=14),
+            name='Track',
+            hoverinfo='skip',
+        ))
+        # White centre line
+        fig.add_trace(go.Scatter(
+            x=outline_x, y=outline_y,
+            mode='lines',
+            line=dict(color='#555555', width=2, dash='dash'),
+            name='Centre',
+            hoverinfo='skip',
+        ))
+    else:
+        # Fallback: connect corner apexes
+        if corners:
+            cx = [c['x'] for c in corners] + [corners[0]['x']]
+            cy = [c['y'] for c in corners] + [corners[0]['y']]
+            fig.add_trace(go.Scatter(
+                x=cx, y=cy,
+                mode='lines',
+                line=dict(color='#333333', width=8),
+                name='Circuit',
+                hoverinfo='skip',
+            ))
+
+    # ── Telemetry trail coloured by speed ────────────────────────
+    fig.add_trace(go.Scatter(
+        x=xs, y=ys,
+        mode='lines+markers',
+        marker=dict(
+            size=4,
+            color=speeds,
+            colorscale=[
+                [0.0, '#0000ff'],
+                [0.3, '#00ff88'],
+                [0.6, '#ffff00'],
+                [1.0, '#ff0000'],
+            ],
+            cmin=0,
+            cmax=350,
+            colorbar=dict(
+                title=dict(
+                    text='km/h',
+                    font=dict(color='#ffffff', size=9),
+                ),
+                thickness=10,
+                len=0.5,
+                tickfont=dict(color='#ffffff', size=8),
+                x=1.01,
+            ),
+            showscale=True,
+        ),
+        line=dict(color='rgba(255,255,255,0.6)', width=3),
+        name='Trail',
+        hovertemplate='%{text}<extra></extra>',
+        text=[f'{s:.0f} km/h' for s in speeds],
+    ))
+
+    # ── Current position ──────────────────────────────────────────
+    fig.add_trace(go.Scatter(
+        x=[xs[-1]], y=[ys[-1]],
+        mode='markers',
+        marker=dict(
+            size=16,
+            color=team_color,
+            symbol='circle',
+            line=dict(color='white', width=2),
+        ),
+        name='Now',
+        hovertemplate=f'{speeds[-1]:.0f} km/h<extra></extra>',
+    ))
+
+    # ── Corner labels ─────────────────────────────────────────────
+    for c in corners:
+        label = f"T{c['number']}{c.get('letter','').strip()}"
+        fig.add_annotation(
+            x=c['x'], y=c['y'],
+            text=label,
+            showarrow=False,
+            font=dict(color='#aaaaaa', size=8),
+            bgcolor='rgba(0,0,0,0.5)',
+        )
+
+    fig.update_layout(
+        height=380,
+        margin=dict(l=0, r=55, t=30, b=0),
+        plot_bgcolor='#0a0a0a',
+        paper_bgcolor='#0a0a0a',
+        font=dict(color='#ffffff'),
+        title=dict(
+            text=f'🗺️ {race}',
+            font=dict(color=team_color, size=12),
+            x=0,
+        ),
+        xaxis=dict(
+            visible=False,
+            scaleanchor='y',
+            scaleratio=1,
+        ),
+        yaxis=dict(visible=False),
+        showlegend=False,
+    )
+
+    return fig
+
+
+# ── Telemetry column renderer ─────────────────────────────────────
+def render_telemetry_column(feed_obj, team_key, label):
     st.markdown(
         f'<div class="pipeline-header">'
         f'🚗 {label} — Live Telemetry</div>',
         unsafe_allow_html=True,
     )
+
     recent = feed_obj.get_recent_packets(limit=15)
     if recent:
         for pkt in reversed(recent[-15:]):
@@ -479,6 +672,7 @@ def render_telemetry_column(feed_obj, team_key, label):
     else:
         st.info("No packets yet")
 
+    # ── Dual-axis speed/RPM chart ─────────────────────────────────
     history = feed_obj.get_chart_history()
     if history['seq']:
         fig = go.Figure()
@@ -521,17 +715,16 @@ def render_telemetry_column(feed_obj, team_key, label):
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    # ── Live track map ───────────────────────────────────────────
-    # race variable comes from outer scope (sidebar selectbox)
+    # ── Live track map ────────────────────────────────────────────
     track_fig = build_track_map(feed_obj, race, team_key)
     if track_fig is not None:
         st.plotly_chart(
             track_fig,
             use_container_width=True,
-            key=f"track_map_{team_key}_{id(feed_obj)}",
+            key=f"track_{team_key}_{id(feed_obj)}",
         )
 
-    # ── Crypto summary line ───────────────────────────────────────
+    # ── Crypto summary ────────────────────────────────────────────
     crypto = feed_obj.get_crypto_stats()
     st.markdown(
         f'<span class="crypto-ok">✅</span> '
@@ -542,152 +735,13 @@ def render_telemetry_column(feed_obj, team_key, label):
     )
 
 
-def build_track_map(
-    feed_obj,
-    race: str,
-    team_key: str,
-) -> Optional[go.Figure]:
-    """
-    Build a live track position map for the given circuit.
-    Shows circuit outline from corner positions,
-    car position coloured by speed, and corner labels.
-    Returns None if no corner data or no packets yet.
-    """
-    import json
-
-    # ── Load corner data ─────────────────────────────────────────
-    corner_path = os.path.join(
-        ROOT, 'data', 'circuits', f"{race}_corners.json"
-    )
-    if not os.path.exists(corner_path):
-        return None
-
-    with open(corner_path, encoding='utf-8') as f:
-        circuit_data = json.load(f)
-    corners = circuit_data.get('corners', [])
-    if not corners:
-        return None
-
-    # ── Get recent telemetry positions ────────────────────────────
-    recent = feed_obj.get_recent_packets(limit=50)
-    if not recent:
-        return None
-
-    # Extract X, Y, Speed from payload_json
-    xs, ys, speeds = [], [], []
-    for pkt in recent:
-        payload = pkt.get('payload_json', {})
-        x = payload.get('X', None)
-        y = payload.get('Y', None)
-        s = payload.get('Speed', 0)
-        if x is not None and y is not None:
-            xs.append(x)
-            ys.append(y)
-            speeds.append(s)
-
-    if not xs:
-        return None
-
-    team_color = TEAM_CONFIG[team_key]['color']
-
-    fig = go.Figure()
-
-    # ── Circuit outline — connect corners in order ────────────────
-    cx = [c['x'] for c in corners] + [corners[0]['x']]
-    cy = [c['y'] for c in corners] + [corners[0]['y']]
-    fig.add_trace(go.Scatter(
-        x=cx, y=cy,
-        mode='lines',
-        line=dict(color='#333333', width=8),
-        name='Circuit',
-        hoverinfo='skip',
-    ))
-
-    # ── Telemetry trail — colour by speed ────────────────────────
-    fig.add_trace(go.Scatter(
-        x=xs, y=ys,
-        mode='lines+markers',
-        marker=dict(
-            size=6,
-            color=speeds,
-            colorscale=[
-                [0.0,  '#0000ff'],   # slow = blue
-                [0.5,  '#ffff00'],   # mid  = yellow
-                [1.0,  '#ff0000'],   # fast = red
-            ],
-            cmin=0,
-            cmax=350,
-            colorbar=dict(
-                title=dict(
-                    text='Speed<br>(km/h)',
-                    font=dict(color='#ffffff', size=9),
-                ),
-                thickness=12,
-                len=0.6,
-                tickfont=dict(color='#ffffff', size=9),
-            ),
-            showscale=True,
-        ),
-        line=dict(color='rgba(255,255,255,0.3)', width=2),
-        name='Telemetry trail',
-        hovertemplate='%{text}<extra></extra>',
-        text=[f'{s:.0f} km/h' for s in speeds],
-    ))
-
-    # ── Current position — latest packet ─────────────────────────
-    fig.add_trace(go.Scatter(
-        x=[xs[-1]], y=[ys[-1]],
-        mode='markers',
-        marker=dict(
-            size=14,
-            color=team_color,
-            symbol='circle',
-            line=dict(color='white', width=2),
-        ),
-        name='Current position',
-        hovertemplate=f'Current: {speeds[-1]:.0f} km/h<extra></extra>',
-    ))
-
-    # ── Corner labels ─────────────────────────────────────────────
-    for c in corners:
-        label = f"T{c['number']}{c.get('letter','').strip()}"
-        fig.add_annotation(
-            x=c['x'], y=c['y'],
-            text=label,
-            showarrow=False,
-            font=dict(color='#888888', size=8),
-            bgcolor='rgba(0,0,0,0)',
-        )
-
-    fig.update_layout(
-        height=350,
-        margin=dict(l=0, r=0, t=30, b=0),
-        plot_bgcolor='#0a0a0a',
-        paper_bgcolor='#0a0a0a',
-        font=dict(color='#ffffff'),
-        title=dict(
-            text=f'🗺️ {race} — Live Position',
-            font=dict(color=team_color, size=13),
-            x=0,
-        ),
-        xaxis=dict(
-            visible=False,
-            scaleanchor='y',
-            scaleratio=1,
-        ),
-        yaxis=dict(visible=False),
-        showlegend=False,
-    )
-
-    return fig
-
-
 # ── Main content ──────────────────────────────────────────────────
 if not st.session_state.running:
     st.info(
         "👈 Select a constructor and circuit, "
         "then click **▶ Start** to begin the simulation."
     )
+
     st.markdown("### How it works")
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -712,7 +766,7 @@ if not st.session_state.running:
             "Logs every decision to audit trail."
         )
 
-    # ── Run history visible even when idle ────────────────────────
+    # ── Saved run history ─────────────────────────────────────────
     if st.session_state.run_history:
         st.divider()
         st.markdown(
@@ -724,8 +778,9 @@ if not st.session_state.running:
         ):
             run_num = len(st.session_state.run_history) - idx
             with st.expander(
-                f"Run {run_num} — {run.get('label', 'Untitled')} "
-                f"· {run['timestamp']}",
+                f"Run {run_num} — "
+                f"{run.get('label', 'Untitled')} · "
+                f"{run['timestamp']}",
                 expanded=False,
             ):
                 col_l, col_r = st.columns([2, 3])
@@ -734,10 +789,10 @@ if not st.session_state.running:
                     if run.get('team_b'):
                         team_label += f" vs {run['team_b']}"
                     st.markdown(f"🏎️ **{team_label}**")
-                    session_map = {'R': 'Race', 'Q': 'Qualifying', 'S': 'Sprint'}
                     st.markdown(
-                        f"📍 {run['race']} · {session_map.get(run['session'], run['session'])}"
-)
+                        f"📍 {run['race']} · "
+                        f"{{'R':'Race','Q':'Qualifying','S':'Sprint'}.get(run['session'], run['session'])}"
+                    )
                     st.markdown(
                         f"👤 {run['driver']} · Lap {run['lap']}"
                     )
@@ -756,21 +811,18 @@ if not st.session_state.running:
                             f"tamper={ts.get('tampers',0)} "
                             f"anomaly={ts.get('anomalies',0)}"
                         )
-
-                    # Export button per saved run
                     export_data = _json.dumps({
-                        'run_info':   {
+                        'run_info': {
                             k: v for k, v in run.items()
                             if k != 'chart_history'
                         },
-                        'chart_data': run.get('chart_history', {}),
+                        'chart_data':   run.get('chart_history', {}),
                         'audit_events': run.get('audit_events', []),
                     }, indent=2)
                     fname = (
                         f"pitcrypt_"
                         f"{run['team'].replace(' ','_')}_"
-                        f"{run['race']}_"
-                        f"run{run_num}.json"
+                        f"{run['race']}_run{run_num}.json"
                     )
                     st.download_button(
                         label="⬇ Export JSON",
@@ -786,13 +838,11 @@ if not st.session_state.running:
                         fig_h = go.Figure()
                         fig_h.add_trace(go.Scatter(
                             x=h['seq'], y=h['speed'],
-                            name='Speed',
                             line=dict(color='#e10600', width=2),
                             yaxis='y1',
                         ))
                         fig_h.add_trace(go.Scatter(
                             x=h['seq'], y=h['rpm'],
-                            name='RPM',
                             line=dict(color='#00d4ff', width=1),
                             yaxis='y2',
                         ))
@@ -858,18 +908,18 @@ else:
         st.metric(
             "✅ Accepted", stats['accepted'],
             delta=f"{stats['accept_rate']:.1%}",
-            help="Packets that passed all cryptographic checks.",
+            help="Passed all cryptographic checks.",
         )
     with m3:
         st.metric(
             "🚨 Rejected", stats['rejected'],
             delta_color="inverse",
-            help="Packets blocked due to tampering or replay.",
+            help="Blocked due to tampering or replay.",
         )
     with m4:
         st.metric(
             "⚠️ Flagged", stats['flagged'],
-            help="Accepted packets with unusual sensor values.",
+            help="Accepted but statistically unusual.",
         )
     with m5:
         st.metric("🔑 Key Rotations", stats['key_rotations'])
