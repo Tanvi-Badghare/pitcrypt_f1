@@ -32,7 +32,7 @@ from signature_verifier import (
     SignatureVerificationError,
 )
 from zkp_verifier       import ZKPVerifier
-from audit_logger       import AuditLogger, AuditDecision
+from audit_logger       import AuditLogger
 from cryptography.exceptions import InvalidSignature, InvalidTag
 
 logging.basicConfig(level=logging.WARNING)
@@ -41,32 +41,17 @@ logging.basicConfig(level=logging.WARNING)
 telemetry_feed.py
 
 Live telemetry feed component for the PitCrypt-F1 dashboard.
-
-Manages the complete pipeline:
-    Car → Relay → Validator
-
-Provides methods for the dashboard to:
-    - Initialise pipeline for a team/race/session
-    - Process one packet through the full pipeline
-    - Get recent packets, stats, crypto health
-    - Get audit events and anomaly statistics
-    - Get chart history for live telemetry trace visualisation
-    - Inject live attacks for demo purposes
+Manages the complete Car → Relay → Validator pipeline.
 """
 
 
 class TelemetryFeed:
-    """
-    Manages live telemetry pipeline for dashboard.
-    Wraps car → relay → validator pipeline components.
-    """
 
     def __init__(self):
         self._initialised = False
         self._reset_state()
 
     def _reset_state(self):
-        """Reset all pipeline state."""
         self._sim           = None
         self._builder       = None
         self._signer        = None
@@ -80,23 +65,19 @@ class TelemetryFeed:
         self._sig_verifier  = None
         self._zkp           = None
         self._audit         = None
-
-        # Crypto metadata
         self._car_engine    = None
         self._relay_engine  = None
         self._relay_val_eng = None
         self._session_start = time.time()
         self._packet_count  = 0
 
-        # Packet buffer
+        # ── Buffers ───────────────────────────────────────────────
+        # Increased to 500 — needed for full lap track map coverage
         self._recent_packets = []
         self._audit_events   = []
-
-        # Last successfully accepted encrypted packet —
-        # used as the source for replay attack injection
         self._last_encrypted = None
 
-        # Chart history — for live telemetry trace graph
+        # ── Chart history — increased to 1000 for full lap trace ──
         self._chart_history = {
             'seq':      [],
             'speed':    [],
@@ -104,7 +85,7 @@ class TelemetryFeed:
             'throttle': [],
         }
 
-        # Stats
+        # ── Stats ─────────────────────────────────────────────────
         self._stats = {
             'total':         0,
             'accepted':      0,
@@ -113,21 +94,19 @@ class TelemetryFeed:
             'key_rotations': 0,
             'start_time':    None,
         }
-
         self._anomaly_stats = {
             'checked':  0,
             'flagged':  0,
             'rejected': 0,
         }
-
         self._crypto_stats = {
-            'car_key':     '0' * 32,
-            'val_key':     '0' * 32,
-            'encrypted':   0,
-            'reencrypted': 0,
-            'signatures':  0,
+            'car_key':      '0' * 32,
+            'val_key':      '0' * 32,
+            'encrypted':    0,
+            'reencrypted':  0,
+            'signatures':   0,
             'zkp_verified': 0,
-            'key_age_s':   0,
+            'key_age_s':    0,
         }
 
         self._data_rows   = 0
@@ -138,16 +117,11 @@ class TelemetryFeed:
         team:    str = 'mercedes',
         race:    str = 'Bahrain',
         session: str = 'R',
-        driver:  str = None,    
-        lap:     int = None,    
+        driver:  str = None,
+        lap:     int = None,
     ) -> None:
-        """
-        Initialise full pipeline for given team/race/session.
-        Performs ECDH handshakes on both legs.
-        """
         self._reset_state()
 
-        # ── Sensor + builder + signer ─────────────────────────────
         self._sim = SensorSimulator(
             team=team, race=race, session=session,
             driver=driver, lap=lap,
@@ -160,32 +134,24 @@ class TelemetryFeed:
             if hasattr(self._sim, 'data')
             else 0
         )
-        self._builder   = PacketBuilder(
+        self._builder = PacketBuilder(
             team=team, session=session
         )
-        self._signer    = PacketSigner(
+        self._signer = PacketSigner(
             node_id=f'{team}_car'
         )
 
         # ── Car → Relay ECDH ──────────────────────────────────────
-        self._car_engine   = CryptoEngine(
-            node_id=f'{team}_car'
-        )
-        self._relay_engine = CryptoEngine(
-            node_id='relay_01'
-        )
+        self._car_engine   = CryptoEngine(node_id=f'{team}_car')
+        self._relay_engine = CryptoEngine(node_id='relay_01')
         cp = self._car_engine.new_session()
         rp = self._relay_engine.new_session()
         self._car_engine.complete_handshake(rp)
         self._relay_engine.complete_handshake(cp)
 
         # ── Relay → Validator ECDH ────────────────────────────────
-        self._relay_val_eng = CryptoEngine(
-            node_id='relay_val'
-        )
-        self._val_eng = CryptoEngine(
-            node_id='fia_validator'
-        )
+        self._relay_val_eng = CryptoEngine(node_id='relay_val')
+        self._val_eng       = CryptoEngine(node_id='fia_validator')
         rvp = self._relay_val_eng.new_session()
         vp  = self._val_eng.new_session()
         self._relay_val_eng.complete_handshake(vp)
@@ -201,9 +167,8 @@ class TelemetryFeed:
             f'{team}_car', self._relay_engine
         )
         self._reenc = RelayReencryptor(node_id='relay_01')
-        self._reenc.register_validator_session(
-            self._relay_val_eng
-        )
+        self._reenc.register_validator_session(self._relay_val_eng)
+
         self._anomaly = AnomalyFilter(node_id='relay_01')
         self._relay_checker = IntegrityChecker(
             node_id='relay_01',
@@ -228,7 +193,6 @@ class TelemetryFeed:
             log_to_file=False,
         )
 
-        # ── Crypto stats seed ─────────────────────────────────────
         car_key = self._car_engine._session.session_key
         val_key = self._val_eng._session.session_key
         self._crypto_stats['car_key'] = car_key.hex()
@@ -237,38 +201,16 @@ class TelemetryFeed:
         self._stats['start_time']     = time.time()
         self._initialised             = True
 
-    def get_available_drivers(self) -> list:
-        """Driver codes available for selected team/race/session."""
-        if self._sim is not None:
-            return self._sim.available_drivers
-        return []
-
-    def get_available_laps(self) -> list:
-        """Lap numbers available for selected team/race/session."""
-        if self._sim is not None:
-            return self._sim.available_laps
-        return []
-
     def process_one_packet(self) -> Optional[dict]:
-        """
-        Process one telemetry packet through full pipeline.
-        Returns result dict or None if not initialised.
-        """
         if not self._initialised:
             return None
 
-        team_id = (
-            self._builder._team_id_str.lower()
-            if hasattr(self._builder, '_team_id_str')
-            else 'mercedes'
-        )
-
         try:
             # ── Car side ─────────────────────────────────────────
-            frame  = self._sim.get_next_frame()
-            packet = self._builder.build(frame)
-            signed = self._signer.sign_packet(packet)
-            commit = ZKPVerifier.generate_commitment(
+            frame     = self._sim.get_next_frame()
+            packet    = self._builder.build(frame)
+            signed    = self._signer.sign_packet(packet)
+            commit    = ZKPVerifier.generate_commitment(
                 signed['payload']
             )
             encrypted = self._enc.encrypt_packet(signed)
@@ -285,23 +227,17 @@ class TelemetryFeed:
 
             integrity = self._relay_checker.check(decrypted)
             if not integrity.passed:
-                self._record_reject(
-                    decrypted, 'integrity_failed'
-                )
+                self._record_reject(decrypted, 'integrity_failed')
                 return self._make_result(
                     decrypted, 'REJECT', 'integrity_failed'
                 )
 
-            annotated = self._anomaly.check_and_annotate(
-                decrypted
-            )
+            annotated = self._anomaly.check_and_annotate(decrypted)
             self._anomaly_stats['checked'] += 1
 
             if annotated['anomaly_rejected']:
                 self._anomaly_stats['rejected'] += 1
-                self._record_reject(
-                    decrypted, 'anomaly_rejected'
-                )
+                self._record_reject(decrypted, 'anomaly_rejected')
                 return self._make_result(
                     decrypted, 'REJECT', 'anomaly_rejected'
                 )
@@ -326,30 +262,22 @@ class TelemetryFeed:
             val_pkt['zkp_commitment'] = commit['commitment']
             val_pkt['zkp_nonce']      = commit['nonce']
 
-            # Signature verify
             try:
                 self._sig_verifier.verify(val_pkt)
                 self._crypto_stats['signatures'] += 1
-            except (
-                InvalidSignature,
-                SignatureVerificationError,
-            ) as e:
+            except (InvalidSignature, SignatureVerificationError):
                 self._record_reject(val_pkt, 'sig_failed')
                 return self._make_result(
                     val_pkt, 'REJECT', 'sig_failed'
                 )
 
-            # Sequence check
             seq_result = self._val_checker.check(val_pkt)
             if not seq_result.passed:
-                self._record_reject(
-                    val_pkt, 'sequence_failed'
-                )
+                self._record_reject(val_pkt, 'sequence_failed')
                 return self._make_result(
                     val_pkt, 'REJECT', 'sequence_failed'
                 )
 
-            # ZKP
             zkp_result = self._zkp.verify_packet(val_pkt)
             if not zkp_result.verified:
                 self._record_reject(val_pkt, 'zkp_failed')
@@ -375,16 +303,12 @@ class TelemetryFeed:
                 )
                 self._stats['accepted'] += 1
 
-            self._stats['total'] += 1
-            self._packet_count   += 1
-
-            # Update key age
+            self._stats['total']    += 1
+            self._packet_count      += 1
             self._crypto_stats['key_age_s'] = (
                 time.time() - self._session_start
             )
 
-            # Attach anomaly_result so threat panel can read
-            # the actual violated channel name, not "unknown"
             val_pkt['anomaly_result'] = annotated.get(
                 'anomaly_result', {}
             )
@@ -393,23 +317,20 @@ class TelemetryFeed:
                 val_pkt, decision, 'all_checks_passed'
             )
             result['payload_json']    = frame
-            result['anomaly_flagged'] = (
-                annotated['anomaly_flagged']
-            )
+            result['anomaly_flagged'] = annotated['anomaly_flagged']
             result['anomaly_result']  = annotated.get(
                 'anomaly_result', {}
             )
 
-            # Store in buffer
+            # ── Packet buffer (500 for full lap track map) ────────
             self._recent_packets.append(result)
-            if len(self._recent_packets) > 100:
+            if len(self._recent_packets) > 500:
                 self._recent_packets.pop(0)
 
-            # Save last successfully encrypted packet —
-            # source material for replay attack injection
+            # Save for replay attack injection
             self._last_encrypted = dict(encrypted)
 
-            # ── Chart history — for telemetry trace graph ─────────
+            # ── Chart history (1000 for full lap trace) ───────────
             self._chart_history['seq'].append(
                 val_pkt.get('sequence_no', 0)
             )
@@ -422,15 +343,13 @@ class TelemetryFeed:
             self._chart_history['throttle'].append(
                 frame.get('Throttle', 0)
             )
-            if len(self._chart_history['seq']) > 200:
+            if len(self._chart_history['seq']) > 1000:
                 for key in self._chart_history:
                     self._chart_history[key].pop(0)
 
-            # Store audit event
+            # ── Audit event ───────────────────────────────────────
             audit_evt = {
-                'timestamp':   datetime.now(
-                    timezone.utc
-                ).isoformat(),
+                'timestamp':   datetime.now(timezone.utc).isoformat(),
                 'decision':    decision,
                 'sequence_no': val_pkt.get('sequence_no', 0),
                 'reason':      'all_checks_passed',
@@ -448,29 +367,18 @@ class TelemetryFeed:
             return None
 
     def inject_attack(self, attack_type: str) -> Optional[dict]:
-        """
-        Manually inject one malicious packet for live demo.
-
-        Args:
-            attack_type: 'tamper', 'replay', or 'forge'
-
-        Returns:
-            Result dict tagged with 'attack_injected',
-            or None if pipeline not initialised.
-        """
         if not self._initialised:
             return None
 
-        # ── Replay attack — resend the last accepted packet ──────
         if attack_type == 'replay':
             if self._last_encrypted is None:
                 return None
             encrypted = dict(self._last_encrypted)
         else:
-            frame  = self._sim.get_next_frame()
-            packet = self._builder.build(frame)
-            signed = self._signer.sign_packet(packet)
-            commit = ZKPVerifier.generate_commitment(
+            frame     = self._sim.get_next_frame()
+            packet    = self._builder.build(frame)
+            signed    = self._signer.sign_packet(packet)
+            commit    = ZKPVerifier.generate_commitment(
                 signed['payload']
             )
             encrypted = self._enc.encrypt_packet(signed)
@@ -480,16 +388,11 @@ class TelemetryFeed:
                     encrypted['ciphertext_bytes']
                 )
                 tampered_ct[5] ^= 0xFF
-                encrypted['ciphertext_bytes'] = bytes(
-                    tampered_ct
-                )
-                encrypted['ciphertext'] = bytes(
-                    tampered_ct
-                ).hex()
+                encrypted['ciphertext_bytes'] = bytes(tampered_ct)
+                encrypted['ciphertext']        = bytes(tampered_ct).hex()
 
         self._stats['total'] += 1
 
-        # ── Relay decrypt ─────────────────────────────────────────
         try:
             decrypted = self._dec.decrypt(encrypted)
         except InvalidTag:
@@ -501,7 +404,6 @@ class TelemetryFeed:
             self._recent_packets.append(result)
             return result
 
-        # ── Relay integrity check — catches replay here ──────────
         integrity = self._relay_checker.check(decrypted)
         if not integrity.passed:
             self._record_reject(decrypted, 'integrity_failed')
@@ -515,7 +417,7 @@ class TelemetryFeed:
         if attack_type == 'forge':
             decrypted = dict(decrypted)
             decrypted['signature_bytes'] = os.urandom(64)
-            decrypted['signature'] = (
+            decrypted['signature']       = (
                 decrypted['signature_bytes'].hex()
             )
 
@@ -545,12 +447,9 @@ class TelemetryFeed:
             return result
 
         val_pkt = dict(reencrypted)
-        val_pkt['payload_bytes']  = plaintext
-        val_pkt['original_node']  = (
-            encrypted.get('node_id', 'unknown')
-        )
+        val_pkt['payload_bytes'] = plaintext
+        val_pkt['original_node'] = encrypted.get('node_id', 'unknown')
 
-        # ── Validator sequence check — second replay defence ──────
         seq_result = self._val_checker.check(val_pkt)
         if not seq_result.passed:
             self._record_reject(val_pkt, 'sequence_failed')
@@ -561,7 +460,6 @@ class TelemetryFeed:
             self._recent_packets.append(result)
             return result
 
-        # ── Signature verify — catches forge here ─────────────────
         try:
             self._sig_verifier.verify(val_pkt)
         except (InvalidSignature, SignatureVerificationError):
@@ -587,35 +485,25 @@ class TelemetryFeed:
         decision: str,
         reason:   str,
     ) -> dict:
-        """Build result dict for dashboard."""
         return {
             'sequence_no':    pkt.get('sequence_no', 0),
             'team':           pkt.get('team', ''),
             'session':        pkt.get('session', ''),
             'driver':         pkt.get('driver', 'UNK'),
             'node_id':        pkt.get(
-                'node_id',
-                pkt.get('original_node', '')
+                'node_id', pkt.get('original_node', '')
             ),
             'decision':       decision,
             'reason':         reason,
-            'timestamp':      datetime.now(
-                timezone.utc
-            ).isoformat(),
+            'timestamp':      datetime.now(timezone.utc).isoformat(),
             'payload_json':   pkt.get('payload_json', {}),
             'anomaly_result': pkt.get('anomaly_result', {}),
         }
 
-    def _record_reject(
-        self, pkt: dict, reason: str
-    ) -> None:
-        """Record a rejection."""
+    def _record_reject(self, pkt: dict, reason: str) -> None:
         self._stats['rejected'] += 1
-
         evt = {
-            'timestamp':   datetime.now(
-                timezone.utc
-            ).isoformat(),
+            'timestamp':   datetime.now(timezone.utc).isoformat(),
             'decision':    'REJECT',
             'sequence_no': pkt.get('sequence_no', 0),
             'reason':      reason,
@@ -624,9 +512,7 @@ class TelemetryFeed:
 
     # ── Getters ───────────────────────────────────────────────────
 
-    def get_recent_packets(
-        self, limit: int = 20
-    ) -> list:
+    def get_recent_packets(self, limit: int = 20) -> list:
         return self._recent_packets[-limit:]
 
     def get_stats(self) -> dict:
@@ -648,9 +534,7 @@ class TelemetryFeed:
     def get_anomaly_stats(self) -> dict:
         return dict(self._anomaly_stats)
 
-    def get_audit_events(
-        self, limit: int = 20
-    ) -> list:
+    def get_audit_events(self, limit: int = 20) -> list:
         return self._audit_events[-limit:]
 
     def get_pipeline_status(self) -> str:
@@ -660,11 +544,17 @@ class TelemetryFeed:
         return self._data_rows
 
     def get_chart_history(self) -> dict:
-        """
-        Return accumulated speed/RPM/throttle history
-        for live telemetry trace visualisation.
-        """
         return dict(self._chart_history)
+
+    def get_available_drivers(self) -> list:
+        if self._sim is not None:
+            return self._sim.available_drivers
+        return []
+
+    def get_available_laps(self) -> list:
+        if self._sim is not None:
+            return self._sim.available_laps
+        return []
 
     def reset(self) -> None:
         self._reset_state()
