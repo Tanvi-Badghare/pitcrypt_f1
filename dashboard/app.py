@@ -25,7 +25,7 @@ for path in [CAR_SRC, REL_SRC, VAL_SRC, IAM_SRC, DASH]:
 from components.telemetry_feed import TelemetryFeed
 from components.threat_panel   import ThreatPanel
 
-# ── Team configuration ────────────────────────────────────────────
+# ── Constants ─────────────────────────────────────────────────────
 TEAM_CONFIG = {
     "mercedes": {"name": "Mercedes AMG",     "color": "#00d2be", "emoji": "🩵"},
     "redbull":  {"name": "Red Bull Racing",  "color": "#3671c6", "emoji": "🔵"},
@@ -35,6 +35,12 @@ TEAM_CONFIG = {
 }
 
 TEAMS_WITHOUT_DATA = set()
+
+SESSION_LABELS = {
+    'R': 'Race',
+    'Q': 'Qualifying',
+    'S': 'Sprint',
+}
 
 
 # ── Cached helpers ────────────────────────────────────────────────
@@ -65,12 +71,14 @@ def peek_drivers_and_laps(team: str, race: str, session: str):
 @st.cache_data
 def load_circuit_outline(race: str, team: str) -> tuple:
     """
-    Load one reference lap's X/Y coordinates to draw
-    the real circuit shape. Tries multiple teams/sessions
-    until it finds usable data.
-    Cached so it only loads once per race/team combo.
+    Build circuit outline from ALL laps combined, sorted by
+    Distance column so the path follows the track correctly.
+    Using all laps ensures the full circuit is drawn regardless
+    of which section the current session starts from.
+    Falls back to single lap if Distance not available.
     """
     import pandas as pd
+    import numpy as np
     raw_dir = os.path.join(ROOT, 'data', 'raw')
 
     for t in [team, 'mercedes', 'ferrari', 'redbull',
@@ -81,28 +89,58 @@ def load_circuit_outline(race: str, team: str) -> tuple:
             if not os.path.exists(path):
                 continue
             try:
-                df = pd.read_csv(
-                    path,
-                    usecols=lambda c: c in [
-                        'X', 'Y', 'LapNumber'
-                    ],
-                )
+                usecols = lambda c: c in [
+                    'X', 'Y', 'Distance', 'LapNumber'
+                ]
+                df = pd.read_csv(path, usecols=usecols)
+
                 if 'X' not in df.columns or 'Y' not in df.columns:
                     continue
-                if 'LapNumber' in df.columns:
-                    min_lap = df['LapNumber'].min()
-                    lap1    = df[df['LapNumber'] == min_lap]
-                    if len(lap1) > 100:
+
+                # ── Strategy 1: Use Distance column to order ──────
+                # Pick one clean lap sorted by Distance
+                # This gives a correct circuit trace regardless
+                # of where in the dataset the lap starts
+                if 'Distance' in df.columns and 'LapNumber' in df.columns:
+                    df = df.dropna(subset=['X', 'Y', 'Distance'])
+
+                    # Find the lap with the most complete data
+                    lap_counts = df.groupby('LapNumber').size()
+                    best_lap   = lap_counts.idxmax()
+                    lap_df     = df[
+                        df['LapNumber'] == best_lap
+                    ].sort_values('Distance')
+
+                    if len(lap_df) > 200:
+                        # Downsample for performance
+                        step = max(1, len(lap_df) // 500)
+                        lap_df = lap_df.iloc[::step]
                         return (
-                            lap1['X'].tolist(),
-                            lap1['Y'].tolist(),
+                            lap_df['X'].tolist(),
+                            lap_df['Y'].tolist(),
                         )
+
+                # ── Strategy 2: Single lap by LapNumber ──────────
+                if 'LapNumber' in df.columns:
+                    lap_counts = df.groupby('LapNumber').size()
+                    best_lap   = lap_counts.idxmax()
+                    lap_df     = df[df['LapNumber'] == best_lap]
+                    if len(lap_df) > 100:
+                        step = max(1, len(lap_df) // 500)
+                        lap_df = lap_df.iloc[::step]
+                        return (
+                            lap_df['X'].tolist(),
+                            lap_df['Y'].tolist(),
+                        )
+
+                # ── Strategy 3: First 800 rows ────────────────────
                 sample = df.head(800)
                 if len(sample) > 50:
                     return (
                         sample['X'].tolist(),
                         sample['Y'].tolist(),
                     )
+
             except Exception:
                 continue
     return [], []
@@ -252,7 +290,6 @@ with st.sidebar:
         help="Run two independent encrypted pipelines simultaneously.",
     )
 
-    # ── Circuit + session MUST come before team B ─────────────────
     race = st.selectbox(
         "Circuit",
         [
@@ -267,9 +304,7 @@ with st.sidebar:
     session = st.selectbox(
         "Session",
         ["R", "Q", "S"],
-        format_func=lambda x: {
-            "R": "Race", "Q": "Qualifying", "S": "Sprint"
-        }[x],
+        format_func=lambda x: SESSION_LABELS.get(x, x),
         help="Race / Qualifying / Sprint session.",
     )
 
@@ -462,7 +497,7 @@ with st.sidebar:
     st.markdown("### 📊 Data Source")
     st.markdown(f"- **Team:** {TEAM_CONFIG[team]['name']}")
     st.markdown(f"- **Circuit:** {race}")
-    st.markdown(f"- **Session:** {session}")
+    st.markdown(f"- **Session:** {SESSION_LABELS.get(session, session)}")
     if driver_arg:
         st.markdown(f"- **Driver:** {driver_arg}")
     if lap_arg:
@@ -472,15 +507,16 @@ with st.sidebar:
         st.markdown(f"- **Rows loaded:** {rows:,}")
 
 
-# ── Track map builder ─────────────────────────────────────────────
+# ── Track map ─────────────────────────────────────────────────────
 def build_track_map(
     feed_obj,
     race: str,
     team_key: str,
 ) -> Optional[go.Figure]:
     """
-    Build live track position map using real telemetry
-    X/Y for circuit outline — no straight-line artefacts.
+    Build live track position map.
+    Circuit outline is drawn from a full lap sorted by
+    Distance — ensures trail stays on the track surface.
     """
     corner_path = os.path.join(
         ROOT, 'data', 'circuits', f"{race}_corners.json"
@@ -511,45 +547,42 @@ def build_track_map(
     team_color = TEAM_CONFIG[team_key]['color']
     fig        = go.Figure()
 
-    # ── Circuit outline from real telemetry ───────────────────────
+    # ── Circuit outline from Distance-sorted telemetry ────────────
     outline_x, outline_y = load_circuit_outline(race, team_key)
     if outline_x:
-        # Thick dark background track
         fig.add_trace(go.Scatter(
             x=outline_x, y=outline_y,
             mode='lines',
-            line=dict(color='#1a1a1a', width=20),
+            line=dict(color='#1a1a1a', width=22),
             name='Track bg',
             hoverinfo='skip',
         ))
-        # Grey track surface
         fig.add_trace(go.Scatter(
             x=outline_x, y=outline_y,
             mode='lines',
-            line=dict(color='#3a3a3a', width=14),
-            name='Track',
+            line=dict(color='#3d3d3d', width=14),
+            name='Track surface',
             hoverinfo='skip',
         ))
-        # White centre line
         fig.add_trace(go.Scatter(
             x=outline_x, y=outline_y,
             mode='lines',
-            line=dict(color='#555555', width=2, dash='dash'),
-            name='Centre',
+            line=dict(
+                color='#555555', width=2, dash='dot'
+            ),
+            name='Centre line',
             hoverinfo='skip',
         ))
-    else:
-        # Fallback: connect corner apexes
-        if corners:
-            cx = [c['x'] for c in corners] + [corners[0]['x']]
-            cy = [c['y'] for c in corners] + [corners[0]['y']]
-            fig.add_trace(go.Scatter(
-                x=cx, y=cy,
-                mode='lines',
-                line=dict(color='#333333', width=8),
-                name='Circuit',
-                hoverinfo='skip',
-            ))
+    elif corners:
+        cx = [c['x'] for c in corners] + [corners[0]['x']]
+        cy = [c['y'] for c in corners] + [corners[0]['y']]
+        fig.add_trace(go.Scatter(
+            x=cx, y=cy,
+            mode='lines',
+            line=dict(color='#333333', width=8),
+            name='Circuit',
+            hoverinfo='skip',
+        ))
 
     # ── Telemetry trail coloured by speed ────────────────────────
     fig.add_trace(go.Scatter(
@@ -578,13 +611,13 @@ def build_track_map(
             ),
             showscale=True,
         ),
-        line=dict(color='rgba(255,255,255,0.6)', width=3),
+        line=dict(color='rgba(255,255,255,0.7)', width=3),
         name='Trail',
         hovertemplate='%{text}<extra></extra>',
         text=[f'{s:.0f} km/h' for s in speeds],
     ))
 
-    # ── Current position ──────────────────────────────────────────
+    # ── Current position dot ──────────────────────────────────────
     fig.add_trace(go.Scatter(
         x=[xs[-1]], y=[ys[-1]],
         mode='markers',
@@ -659,7 +692,9 @@ def render_telemetry_column(feed_obj, team_key, label):
             rpm      = payload.get('RPM',      0)
             throttle = payload.get('Throttle', 0)
             gear     = payload.get('nGear',    0)
-            pos_label = f" · **{track_pos}**" if track_pos else ""
+            pos_label = (
+                f" · **{track_pos}**" if track_pos else ""
+            )
             st.markdown(
                 f"{badge} `seq={seq:04d}` "
                 f"**[{driver}]** Lap **{lap}**{pos_label} · "
@@ -694,7 +729,10 @@ def render_telemetry_column(feed_obj, team_key, label):
             plot_bgcolor='#0a0a0a',
             paper_bgcolor='#0a0a0a',
             font=dict(color='#ffffff', size=9),
-            xaxis=dict(title='Packet sequence', gridcolor='#222'),
+            xaxis=dict(
+                title='Packet sequence',
+                gridcolor='#222',
+            ),
             yaxis=dict(
                 title='Speed (km/h)',
                 title_font=dict(color='#e10600'),
@@ -791,7 +829,7 @@ if not st.session_state.running:
                     st.markdown(f"🏎️ **{team_label}**")
                     st.markdown(
                         f"📍 {run['race']} · "
-                        f"{{'R':'Race','Q':'Qualifying','S':'Sprint'}.get(run['session'], run['session'])}"
+                        f"{SESSION_LABELS.get(run['session'], run['session'])}"
                     )
                     st.markdown(
                         f"👤 {run['driver']} · Lap {run['lap']}"
@@ -816,8 +854,12 @@ if not st.session_state.running:
                             k: v for k, v in run.items()
                             if k != 'chart_history'
                         },
-                        'chart_data':   run.get('chart_history', {}),
-                        'audit_events': run.get('audit_events', []),
+                        'chart_data':   run.get(
+                            'chart_history', {}
+                        ),
+                        'audit_events': run.get(
+                            'audit_events', []
+                        ),
                     }, indent=2)
                     fname = (
                         f"pitcrypt_"
@@ -838,12 +880,16 @@ if not st.session_state.running:
                         fig_h = go.Figure()
                         fig_h.add_trace(go.Scatter(
                             x=h['seq'], y=h['speed'],
-                            line=dict(color='#e10600', width=2),
+                            line=dict(
+                                color='#e10600', width=2
+                            ),
                             yaxis='y1',
                         ))
                         fig_h.add_trace(go.Scatter(
                             x=h['seq'], y=h['rpm'],
-                            line=dict(color='#00d4ff', width=1),
+                            line=dict(
+                                color='#00d4ff', width=1
+                            ),
                             yaxis='y2',
                         ))
                         fig_h.update_layout(
@@ -964,7 +1010,9 @@ else:
             f'Session key: `{crypto["car_key"][:16]}...`',
             unsafe_allow_html=True,
         )
-        st.markdown(f'Packets encrypted: **{crypto["encrypted"]}**')
+        st.markdown(
+            f'Packets encrypted: **{crypto["encrypted"]}**'
+        )
         st.markdown(
             f'Key age: **{crypto["key_age_s"]:.0f}s** '
             f'/ 300s rotation window'
@@ -1015,7 +1063,9 @@ else:
         if recent_threats:
             for threat in recent_threats:
                 severity = threat.get('severity', 'WARN')
-                icon     = "🔴" if severity == "CRITICAL" else "🟡"
+                icon     = (
+                    "🔴" if severity == "CRITICAL" else "🟡"
+                )
                 st.markdown(
                     f'<div class="threat-alert">'
                     f'{icon} <b>{threat["type"]}</b> — '
@@ -1043,7 +1093,9 @@ else:
                 reason   = evt.get('reason', '')
                 ts       = evt.get('timestamp', '')[:19]
                 icon = {
-                    'ACCEPT': '🟢', 'REJECT': '🔴', 'FLAG': '🟡',
+                    'ACCEPT': '🟢',
+                    'REJECT': '🔴',
+                    'FLAG':   '🟡',
                 }.get(decision, '🟢')
                 st.markdown(
                     f"{icon} `{ts}` · **{decision}** · "
@@ -1059,9 +1111,12 @@ else:
         st.metric("Anomalies flagged",  anomaly['flagged'])
         st.metric("Anomalies rejected", anomaly['rejected'])
         if anomaly['checked'] > 0:
-            flag_rate = anomaly['flagged'] / anomaly['checked']
+            flag_rate = (
+                anomaly['flagged'] / anomaly['checked']
+            )
             st.progress(
-                flag_rate, text=f"Flag rate: {flag_rate:.1%}"
+                flag_rate,
+                text=f"Flag rate: {flag_rate:.1%}"
             )
 
     st.divider()
