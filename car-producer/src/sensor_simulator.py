@@ -280,6 +280,8 @@ class SensorSimulator:
             print(f"  Races:   {sorted(df['Race'].unique())}")
         if 'Session' in df.columns:
             print(f"  Sessions: {sorted(df['Session'].unique())}")
+        # ── Sort by lap and distance so stream follows
+        #    physical track direction from Distance=0 ──────────────
 
         return df
 
