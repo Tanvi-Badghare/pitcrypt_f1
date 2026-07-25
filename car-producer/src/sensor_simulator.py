@@ -234,8 +234,18 @@ class SensorSimulator:
         # ── Clean ────────────────────────────────────────────────
         before = len(df)
         df = df.dropna(subset=CHANNELS)
+        df = df[(df['X'] != 0) & (df['Y'] != 0)]
         df = df.reset_index(drop=True)
         after = len(df)
+
+        if self.race and 'Race' in df.columns:
+            df = df[df['Race'] == self.race].reset_index(drop=True)
+            print(f"  Race filter: {self.race} ({len(df):,} rows)")
+
+        if self.session and 'Session' in df.columns:
+            df = df[df['Session'] == self.session].reset_index(drop=True)
+            print(f"  Session filter: {self.session} ({len(df):,} rows)")
+        # 👆 ──────────────────────────────── 👆
 
         # ── Driver filter ────────────────────────────────────────
         if self.driver and 'Driver' in df.columns:
@@ -275,14 +285,6 @@ class SensorSimulator:
         print(f"\n  Loaded:  {before:,} rows")
         print(f"  Cleaned: {after:,} rows "
               f"({before - after:,} dropped)")
-
-        if 'Race' in df.columns:
-            print(f"  Races:   {sorted(df['Race'].unique())}")
-        if 'Session' in df.columns:
-            print(f"  Sessions: {sorted(df['Session'].unique())}")
-        # ── Sort by lap and distance so stream follows
-        #    physical track direction from Distance=0 ──────────────
-
         return df
 
     # ── Transformations ──────────────────────────────────────────
