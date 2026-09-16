@@ -36,8 +36,6 @@ an immutable audit trail. A live Streamlit dashboard visualises the
 pipeline in real time, including driver-level telemetry, track position,
 and adversarial attack injection for demonstration purposes.
 
-**This is a Masters application portfolio project demonstrating applied
-cryptographic engineering in a real-world regulated domain.**
 
 ---
 
