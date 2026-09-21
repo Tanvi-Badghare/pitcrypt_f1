@@ -1,0 +1,57 @@
+{
+  "benchmark": "benchmark_throughput",
+  "scenario": "single_and_multi_car",
+  "parameters": {
+    "duration": 2.0,
+    "cars": 2,
+    "circuit": "Bahrain International Circuit",
+    "synthetic": true,
+    "output_json": "results/throughput.json"
+  },
+  "results": {
+    "single_car": {
+      "cars": 1,
+      "duration_s": 2.000148000079207,
+      "packets_generated": 3340,
+      "packets_accepted": 3340,
+      "packets_rejected": 0,
+      "packets_per_sec": 1669.8764290781153,
+      "packets_per_sec_generated": 1669.8764290781153,
+      "failure_stages": {}
+    },
+    "multi_car": {
+      "cars": 2,
+      "duration_s": 6.707472599926405,
+      "packets_generated": 7093,
+      "packets_accepted": 7093,
+      "packets_rejected": 0,
+      "packets_per_sec": 1057.4772977943771,
+      "packets_per_sec_per_car": 528.7386488971886,
+      "packets_per_sec_generated": 1057.4772977943771,
+      "failure_stages": {},
+      "car_ids": [
+        "RBR-01",
+        "FER-01"
+      ],
+      "per_car": [
+        {
+          "car_id": "FER-01",
+          "samples_generated": 3558,
+          "packets_accepted": 3558,
+          "packets_rejected": 0,
+          "duration_s": 2.0002009000163525,
+          "failure_stages": {}
+        },
+        {
+          "car_id": "RBR-01",
+          "samples_generated": 3535,
+          "packets_accepted": 3535,
+          "packets_rejected": 0,
+          "duration_s": 2.0000466998899356,
+          "failure_stages": {}
+        }
+      ]
+    }
+  },
+  "timestamp_unix": 1790004385.1813483
+}

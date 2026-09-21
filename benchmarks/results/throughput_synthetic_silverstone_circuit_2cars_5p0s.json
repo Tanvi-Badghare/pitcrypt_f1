@@ -1,0 +1,75 @@
+{
+  "benchmark": "benchmark_throughput",
+  "scenario": "single_and_multi_car",
+  "parameters": {
+    "duration": 5.0,
+    "cars": 2,
+    "circuit": "Silverstone Circuit",
+    "synthetic": true,
+    "data_source": "synthetic"
+  },
+  "results": {
+    "single_car": {
+      "cars": 1,
+      "duration_s": 5.000577699975111,
+      "packets_generated": 6018,
+      "packets_accepted": 6018,
+      "packets_rejected": 0,
+      "packets_per_sec": 1203.4609521275818,
+      "packets_per_sec_per_car": 1203.4609521275818,
+      "failure_stages": {},
+      "cpu_time_s": 5.0,
+      "memory_peak_mb": 462.703125,
+      "per_car": [
+        {
+          "car_id": "RBR-01",
+          "generated": 6018,
+          "accepted": 6018,
+          "rejected": 0,
+          "duration_s": 5.000577699975111,
+          "packets_per_sec": 1203.4609521275818,
+          "failure_stages": {},
+          "cpu_time_s": 5.0,
+          "memory_peak_mb": 462.703125
+        }
+      ]
+    },
+    "multi_car": {
+      "cars": 2,
+      "duration_s": 12.113519000005908,
+      "packets_generated": 11254,
+      "packets_accepted": 11254,
+      "packets_rejected": 0,
+      "packets_per_sec": 929.0446483795923,
+      "packets_per_sec_per_car": 464.52232418979617,
+      "failure_stages": {},
+      "cpu_time_s_total": 9.96875,
+      "memory_peak_mb_max": 454.52734375,
+      "per_car": [
+        {
+          "car_id": "FER-01",
+          "generated": 5651,
+          "accepted": 5651,
+          "rejected": 0,
+          "duration_s": 5.000309299910441,
+          "packets_per_sec": 1130.1300901728646,
+          "failure_stages": {},
+          "cpu_time_s": 5.0,
+          "memory_peak_mb": 454.52734375
+        },
+        {
+          "car_id": "RBR-01",
+          "generated": 5603,
+          "accepted": 5603,
+          "rejected": 0,
+          "duration_s": 5.000867399969138,
+          "packets_per_sec": 1120.4056320378695,
+          "failure_stages": {},
+          "cpu_time_s": 4.96875,
+          "memory_peak_mb": 454.50390625
+        }
+      ]
+    }
+  },
+  "timestamp_unix": 1790013015.029698
+}

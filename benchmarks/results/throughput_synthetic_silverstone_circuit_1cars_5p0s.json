@@ -1,0 +1,64 @@
+{
+  "benchmark": "benchmark_throughput",
+  "scenario": "single_and_multi_car",
+  "parameters": {
+    "duration": 5.0,
+    "cars": 1,
+    "circuit": "Silverstone Circuit",
+    "synthetic": true,
+    "data_source": "synthetic"
+  },
+  "results": {
+    "single_car": {
+      "cars": 1,
+      "duration_s": 5.000246900017373,
+      "packets_generated": 5543,
+      "packets_accepted": 5543,
+      "packets_rejected": 0,
+      "packets_per_sec": 1108.5452600312078,
+      "packets_per_sec_per_car": 1108.5452600312078,
+      "failure_stages": {},
+      "cpu_time_s": 4.96875,
+      "memory_peak_mb": 462.73046875,
+      "per_car": [
+        {
+          "car_id": "RBR-01",
+          "generated": 5543,
+          "accepted": 5543,
+          "rejected": 0,
+          "duration_s": 5.000246900017373,
+          "packets_per_sec": 1108.5452600312078,
+          "failure_stages": {},
+          "cpu_time_s": 4.96875,
+          "memory_peak_mb": 462.73046875
+        }
+      ]
+    },
+    "multi_car": {
+      "cars": 1,
+      "duration_s": 11.681604599929415,
+      "packets_generated": 5804,
+      "packets_accepted": 5804,
+      "packets_rejected": 0,
+      "packets_per_sec": 496.8495509628078,
+      "packets_per_sec_per_car": 496.8495509628078,
+      "failure_stages": {},
+      "cpu_time_s_total": 4.921875,
+      "memory_peak_mb_max": 454.55078125,
+      "per_car": [
+        {
+          "car_id": "RBR-01",
+          "generated": 5804,
+          "accepted": 5804,
+          "rejected": 0,
+          "duration_s": 5.000330199953169,
+          "packets_per_sec": 1160.7233458411124,
+          "failure_stages": {},
+          "cpu_time_s": 4.921875,
+          "memory_peak_mb": 454.55078125
+        }
+      ]
+    }
+  },
+  "timestamp_unix": 1790012984.8645487
+}

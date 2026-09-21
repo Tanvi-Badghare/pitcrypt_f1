@@ -1,0 +1,166 @@
+{
+  "benchmark": "benchmark_throughput",
+  "scenario": "single_and_multi_car",
+  "parameters": {
+    "duration": 5.0,
+    "cars": 10,
+    "circuit": "Silverstone Circuit",
+    "synthetic": true,
+    "data_source": "synthetic"
+  },
+  "results": {
+    "single_car": {
+      "cars": 1,
+      "duration_s": 5.000260200002231,
+      "packets_generated": 5772,
+      "packets_accepted": 5772,
+      "packets_rejected": 0,
+      "packets_per_sec": 1154.339928149624,
+      "packets_per_sec_per_car": 1154.339928149624,
+      "failure_stages": {},
+      "cpu_time_s": 4.921875,
+      "peak_rss_mb": 462.73046875,
+      "per_car": [
+        {
+          "car_id": "RBR-01",
+          "generated": 5772,
+          "accepted": 5772,
+          "rejected": 0,
+          "duration_s": 5.000260200002231,
+          "packets_per_sec": 1154.339928149624,
+          "failure_stages": {},
+          "cpu_time_s": 4.921875,
+          "peak_rss_mb": 462.73046875
+        }
+      ]
+    },
+    "multi_car": {
+      "cars": 10,
+      "wall_duration_s": 17.20775479997974,
+      "packets_generated": 36237,
+      "packets_accepted": 36237,
+      "packets_rejected": 0,
+      "packets_per_sec": 7247.4,
+      "packets_per_sec_per_car": 724.74,
+      "failure_stages": {},
+      "logical_cpus": 16,
+      "aggregate_cpu_time_s": 44.25,
+      "aggregate_cpu_utilization_pct": 16.071968900924,
+      "max_worker_rss_mb": 454.4140625,
+      "sum_worker_rss_mb": 4539.6484375,
+      "per_car": [
+        {
+          "car_id": "AMR-01",
+          "generated": 3655,
+          "accepted": 3655,
+          "rejected": 0,
+          "duration_s": 5.000458900001831,
+          "packets_per_sec": 730.9329149767957,
+          "failure_stages": {},
+          "cpu_time_s": 4.5625,
+          "peak_rss_mb": 453.8046875
+        },
+        {
+          "car_id": "AMR-02",
+          "generated": 3794,
+          "accepted": 3794,
+          "rejected": 0,
+          "duration_s": 5.000609499984421,
+          "packets_per_sec": 758.7075135564614,
+          "failure_stages": {},
+          "cpu_time_s": 4.5,
+          "peak_rss_mb": 454.4140625
+        },
+        {
+          "car_id": "FER-01",
+          "generated": 3545,
+          "accepted": 3545,
+          "rejected": 0,
+          "duration_s": 5.000043700099923,
+          "packets_per_sec": 708.9938033799896,
+          "failure_stages": {},
+          "cpu_time_s": 4.46875,
+          "peak_rss_mb": 453.921875
+        },
+        {
+          "car_id": "FER-02",
+          "generated": 3572,
+          "accepted": 3572,
+          "rejected": 0,
+          "duration_s": 5.000606099958532,
+          "packets_per_sec": 714.3134109342509,
+          "failure_stages": {},
+          "cpu_time_s": 4.296875,
+          "peak_rss_mb": 453.9453125
+        },
+        {
+          "car_id": "MCL-01",
+          "generated": 3376,
+          "accepted": 3376,
+          "rejected": 0,
+          "duration_s": 5.000360199948773,
+          "packets_per_sec": 675.1513621027914,
+          "failure_stages": {},
+          "cpu_time_s": 4.234375,
+          "peak_rss_mb": 453.90234375
+        },
+        {
+          "car_id": "MCL-02",
+          "generated": 3916,
+          "accepted": 3916,
+          "rejected": 0,
+          "duration_s": 5.000094300019555,
+          "packets_per_sec": 783.1852291235157,
+          "failure_stages": {},
+          "cpu_time_s": 4.65625,
+          "peak_rss_mb": 453.96875
+        },
+        {
+          "car_id": "MER-01",
+          "generated": 3598,
+          "accepted": 3598,
+          "rejected": 0,
+          "duration_s": 5.001743100001477,
+          "packets_per_sec": 719.3492204745457,
+          "failure_stages": {},
+          "cpu_time_s": 4.46875,
+          "peak_rss_mb": 453.91796875
+        },
+        {
+          "car_id": "MER-02",
+          "generated": 3454,
+          "accepted": 3454,
+          "rejected": 0,
+          "duration_s": 5.000077500008047,
+          "packets_per_sec": 690.7892927648504,
+          "failure_stages": {},
+          "cpu_time_s": 4.3125,
+          "peak_rss_mb": 453.86328125
+        },
+        {
+          "car_id": "RBR-01",
+          "generated": 3671,
+          "accepted": 3671,
+          "rejected": 0,
+          "duration_s": 5.001052499981597,
+          "packets_per_sec": 734.04548342844,
+          "failure_stages": {},
+          "cpu_time_s": 4.390625,
+          "peak_rss_mb": 453.95703125
+        },
+        {
+          "car_id": "RBR-02",
+          "generated": 3656,
+          "accepted": 3656,
+          "rejected": 0,
+          "duration_s": 5.000703300000168,
+          "packets_per_sec": 731.0971638729051,
+          "failure_stages": {},
+          "cpu_time_s": 4.359375,
+          "peak_rss_mb": 453.953125
+        }
+      ]
+    }
+  },
+  "timestamp_unix": 1790013632.4718876
+}
