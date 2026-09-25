@@ -1,109 +1,202 @@
 {
-  "simulation": "packet_loss",
-  "timestamp": "2026-04-23T11:21:22.558979+00:00",
-  "elapsed_s": 0.42,
-  "results": [
-    {
-      "scenario": "random_loss",
-      "results": [
-        {
-          "configured_loss_pct": 5,
-          "sent": 50,
-          "dropped": 5,
-          "accepted": 45,
-          "gaps_detected": 0,
-          "actual_rate": 0.1
-        },
-        {
-          "configured_loss_pct": 10,
-          "sent": 50,
-          "dropped": 4,
-          "accepted": 46,
-          "gaps_detected": 0,
-          "actual_rate": 0.08
-        },
-        {
-          "configured_loss_pct": 20,
-          "sent": 50,
-          "dropped": 10,
-          "accepted": 40,
-          "gaps_detected": 0,
-          "actual_rate": 0.2
-        }
-      ]
-    },
-    {
-      "scenario": "burst_loss",
-      "results": [
-        {
-          "burst_size": 3,
-          "dropped": 3,
-          "accepted": 27,
-          "gaps_detected": 1,
-          "recovered": true
-        },
-        {
-          "burst_size": 5,
-          "dropped": 5,
-          "accepted": 25,
-          "gaps_detected": 1,
-          "recovered": true
-        },
-        {
-          "burst_size": 10,
-          "dropped": 10,
-          "accepted": 20,
-          "gaps_detected": 1,
-          "recovered": true
-        }
-      ]
-    },
-    {
+  "metadata": {
+    "project": "PitCrypt-F1",
+    "experiment": "packet_loss_network_resilience",
+    "team": "mercedes",
+    "race": "Bahrain",
+    "session": "R",
+    "random_seed": 42,
+    "generated_at": "2026-09-24T13:32:34Z"
+  },
+  "scenarios": {
+    "random_loss": [
+      {
+        "scenario": "random_0pct",
+        "generated": 200,
+        "transmitted": 200,
+        "dropped": 0,
+        "accepted": 200,
+        "rejected": 0,
+        "actual_loss_rate": 0.0,
+        "sequence_gaps_detected": 0,
+        "replay_detections": 0,
+        "signature_failures": 0,
+        "commitment_failures": 0,
+        "configured_loss_rate": 0.0,
+        "packet_count": 200
+      },
+      {
+        "scenario": "random_1pct",
+        "generated": 200,
+        "transmitted": 199,
+        "dropped": 1,
+        "accepted": 199,
+        "rejected": 0,
+        "actual_loss_rate": 0.005,
+        "sequence_gaps_detected": 0,
+        "replay_detections": 0,
+        "signature_failures": 0,
+        "commitment_failures": 0,
+        "configured_loss_rate": 0.01,
+        "packet_count": 200
+      },
+      {
+        "scenario": "random_5pct",
+        "generated": 200,
+        "transmitted": 189,
+        "dropped": 11,
+        "accepted": 189,
+        "rejected": 0,
+        "actual_loss_rate": 0.055,
+        "sequence_gaps_detected": 0,
+        "replay_detections": 0,
+        "signature_failures": 0,
+        "commitment_failures": 0,
+        "configured_loss_rate": 0.05,
+        "packet_count": 200
+      },
+      {
+        "scenario": "random_10pct",
+        "generated": 200,
+        "transmitted": 177,
+        "dropped": 23,
+        "accepted": 177,
+        "rejected": 0,
+        "actual_loss_rate": 0.115,
+        "sequence_gaps_detected": 0,
+        "replay_detections": 0,
+        "signature_failures": 0,
+        "commitment_failures": 0,
+        "configured_loss_rate": 0.1,
+        "packet_count": 200
+      },
+      {
+        "scenario": "random_20pct",
+        "generated": 200,
+        "transmitted": 154,
+        "dropped": 46,
+        "accepted": 154,
+        "rejected": 0,
+        "actual_loss_rate": 0.23,
+        "sequence_gaps_detected": 0,
+        "replay_detections": 0,
+        "signature_failures": 0,
+        "commitment_failures": 0,
+        "configured_loss_rate": 0.2,
+        "packet_count": 200
+      }
+    ],
+    "burst_loss": [
+      {
+        "scenario": "burst_3",
+        "generated": 100,
+        "transmitted": 97,
+        "dropped": 3,
+        "accepted": 97,
+        "rejected": 0,
+        "actual_loss_rate": 0.03,
+        "sequence_gaps_detected": 1,
+        "replay_detections": 0,
+        "signature_failures": 0,
+        "commitment_failures": 0,
+        "burst_size": 3,
+        "packet_count": 100
+      },
+      {
+        "scenario": "burst_5",
+        "generated": 100,
+        "transmitted": 95,
+        "dropped": 5,
+        "accepted": 95,
+        "rejected": 0,
+        "actual_loss_rate": 0.05,
+        "sequence_gaps_detected": 1,
+        "replay_detections": 0,
+        "signature_failures": 0,
+        "commitment_failures": 0,
+        "burst_size": 5,
+        "packet_count": 100
+      },
+      {
+        "scenario": "burst_10",
+        "generated": 100,
+        "transmitted": 90,
+        "dropped": 10,
+        "accepted": 90,
+        "rejected": 0,
+        "actual_loss_rate": 0.1,
+        "sequence_gaps_detected": 1,
+        "replay_detections": 0,
+        "signature_failures": 0,
+        "commitment_failures": 0,
+        "burst_size": 10,
+        "packet_count": 100
+      }
+    ],
+    "selective_loss": {
       "scenario": "selective_loss",
-      "drop_indices": [
-        3,
-        12,
-        7,
-        15
-      ],
-      "dropped": 4,
-      "accepted": 16,
-      "gaps_detected": 0,
-      "recovered": true
+      "generated": 100,
+      "transmitted": 92,
+      "dropped": 8,
+      "accepted": 92,
+      "rejected": 0,
+      "actual_loss_rate": 0.08,
+      "sequence_gaps_detected": 8,
+      "replay_detections": 0,
+      "signature_failures": 0,
+      "commitment_failures": 0,
+      "packet_count": 100,
+      "drop_positions": [
+        10,
+        25,
+        40,
+        55,
+        70,
+        75,
+        85,
+        95
+      ]
     },
-    {
+    "recovery": {
       "scenario": "recovery",
-      "phases": [
-        {
-          "phase": "normal",
-          "sent": 10,
-          "dropped": 0,
-          "accepted": 10
-        },
-        {
-          "phase": "loss",
-          "sent": 10,
-          "dropped": 10,
-          "accepted": 0
-        },
-        {
-          "phase": "recovery",
-          "sent": 10,
-          "dropped": 0,
-          "accepted": 10
-        }
-      ],
-      "recovered": true
+      "phase_packets": 50,
+      "normal": {
+        "generated": 50,
+        "transmitted": 50,
+        "accepted": 50
+      },
+      "loss": {
+        "generated": 50,
+        "transmitted": 0,
+        "dropped": 50,
+        "accepted": 0
+      },
+      "recovery": {
+        "generated": 50,
+        "transmitted": 50,
+        "accepted": 50
+      },
+      "recovery_time_ms": 0.8213999681174755,
+      "recovery_successful": true,
+      "sequence_gaps_detected": 0
     },
-    {
-      "scenario": "high_load_loss",
-      "n_packets": 100,
-      "loss_rate": 0.05,
-      "dropped": 1,
-      "accepted": 99,
-      "accept_rate": 0.99,
-      "pkt_per_sec": 1061.7,
-      "elapsed_s": 0.094
+    "high_load": {
+      "scenario": "high_load",
+      "generated": 1000,
+      "transmitted": 960,
+      "dropped": 40,
+      "accepted": 960,
+      "rejected": 0,
+      "actual_loss_rate": 0.04,
+      "sequence_gaps_detected": 0,
+      "replay_detections": 0,
+      "signature_failures": 0,
+      "commitment_failures": 0,
+      "packet_count": 1000,
+      "configured_loss_rate": 0.05,
+      "elapsed_seconds": 0.6857844999758527,
+      "processing_rate_packets_per_second": 1458.1840214166568,
+      "transmitted_rate_packets_per_second": 1399.8566605599906
     }
-  ]
+  }
 }
