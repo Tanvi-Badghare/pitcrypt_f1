@@ -1,9 +1,9 @@
 {
   "simulation": "tampering_attack",
-  "timestamp": "2026-06-11T13:11:34.607833+00:00",
+  "timestamp": "2026-09-16T14:34:04.906285+00:00",
   "total": 7,
   "detected": 7,
-  "elapsed_s": 0.02,
+  "elapsed_s": 0.03,
   "results": [
     {
       "attack": "payload_bit_flip",
@@ -15,7 +15,7 @@
     {
       "attack": "speed_injection",
       "layer": "validator_signature",
-      "original_speed": 34.0,
+      "original_speed": 16.9575,
       "detected": true,
       "reason": "signature_failed: Invalid Ed25519 signature from node 'mercedes_car'. Packet may have been tampered with.",
       "detection_point": "validator"
