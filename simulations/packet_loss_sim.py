@@ -1,575 +1,1287 @@
+"""
+PitCrypt-F1 Packet Loss / Network Resilience Evaluation
+=========================================================
+
+Evaluates validator-side resilience under controlled packet loss.
+
+Scenarios
+---------
+1. Random packet loss
+   0%, 1%, 5%, 10%, 20%
+
+2. Burst packet loss
+   3, 5, 10 consecutive packets
+
+3. Selective packet loss
+   Deterministic packet positions are dropped.
+
+4. Recovery
+   Normal traffic -> complete loss -> traffic restoration
+
+5. High-load loss
+   Larger workload under 5% random packet loss.
+
+Metrics
+-------
+- Configured loss rate
+- Actual loss rate
+- Packets generated
+- Packets transmitted
+- Packets dropped
+- Packets accepted
+- Packets rejected
+- Sequence gaps detected
+- Replay detections
+- Signature failures
+- Commitment failures
+- Recovery timing
+- Processing throughput
+
+Important
+---------
+This is an evaluation/simulation layer.
+
+It does not modify the underlying PitCrypt packet,
+cryptographic, relay, or validator implementations.
+"""
+
 import os
 import sys
 import json
-import time
 import random
-import logging
-from datetime import datetime, timezone
+import time
+from statistics import mean, median
+from typing import Optional
 
-# ── Path setup ───────────────────────────────────────────────────
-ROOT    = os.path.abspath(os.path.dirname(__file__) + '/..')
-CAR_SRC = os.path.join(ROOT, 'car-producer',  'src')
-REL_SRC = os.path.join(ROOT, 'relay-node',    'src')
-VAL_SRC = os.path.join(ROOT, 'validator-node', 'src')
 
-sys.path.insert(0, CAR_SRC)
-sys.path.insert(0, REL_SRC)
-sys.path.insert(0, VAL_SRC)
+# ================================================================
+# PATH SETUP
+# ================================================================
 
-from crypto_engine      import CryptoEngine
-from sensor_simulator   import SensorSimulator
-from packet_builder     import PacketBuilder
-from signer             import PacketSigner
-from encryptor          import PacketEncryptor
-from decryptor          import RelayDecryptor
-from reencryptor        import RelayReencryptor
-from sequence_checker   import ValidatorSequenceChecker
-from signature_verifier import ValidatorSignatureVerifier
-from zkp_verifier       import ZKPVerifier
-from audit_logger       import AuditLogger
-
-logging.basicConfig(
-    level=logging.WARNING,
-    format="%(asctime)s — %(levelname)s — %(message)s"
+ROOT = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..")
 )
 
-"""
-packet_loss_sim.py
+sys.path.insert(
+    0,
+    os.path.join(ROOT, "car-producer", "src")
+)
 
-Simulates packet loss scenarios and measures pipeline
-resilience under real F1 telemetry conditions.
+sys.path.insert(
+    0,
+    os.path.join(ROOT, "relay-node", "src")
+)
 
-Scenarios tested:
-    1. Random loss     — packets dropped randomly at 5%, 10%, 20%
-    2. Burst loss      — consecutive packets dropped (network blip)
-    3. Selective loss  — specific sequence numbers dropped
-    4. Recovery        — pipeline continues after loss episode
-    5. High load loss  — loss under sustained 100Hz simulation
-
-Metrics captured:
-    - Loss rate actual vs configured
-    - Sequence gap detection count
-    - Pipeline recovery time
-    - Accepted vs dropped at validator
-
-Results saved to:
-    simulations/results/packet_loss_results.json
-"""
-
-RESULTS_DIR = os.path.join(ROOT, 'simulations', 'results')
-os.makedirs(RESULTS_DIR, exist_ok=True)
+sys.path.insert(
+    0,
+    os.path.join(ROOT, "validator-node", "src")
+)
 
 
-def build_pipeline():
-    """Build complete pipeline."""
-    sim     = SensorSimulator(
-        team='mercedes', race='Bahrain', session='R',
-        add_noise=False, inject_anomalies=False,
-    )
-    builder = PacketBuilder(team='mercedes', session='R')
-    signer  = PacketSigner(node_id='mercedes_car')
+# ================================================================
+# IMPORTS
+# ================================================================
 
-    car_eng   = CryptoEngine(node_id='mercedes_car')
-    relay_eng = CryptoEngine(node_id='relay_01')
-    cp        = car_eng.new_session()
-    rp        = relay_eng.new_session()
-    car_eng.complete_handshake(rp)
-    relay_eng.complete_handshake(cp)
+from sensor_simulator import SensorSimulator
+from packet_builder import PacketBuilder
+from signer import PacketSigner
+from encryptor import PacketEncryptor
+from crypto_engine import CryptoEngine
 
-    relay_val = CryptoEngine(node_id='relay_val')
-    val_eng   = CryptoEngine(node_id='validator')
-    rvp       = relay_val.new_session()
-    vp        = val_eng.new_session()
-    relay_val.complete_handshake(vp)
-    val_eng.complete_handshake(rvp)
+from decryptor import RelayDecryptor
+from reencryptor import RelayReencryptor
 
-    enc   = PacketEncryptor(
-        crypto_engine=car_eng, node_id='mercedes_car'
-    )
-    dec   = RelayDecryptor(node_id='relay_01')
-    dec.register_session('mercedes_car', relay_eng)
-    reenc = RelayReencryptor(node_id='relay_01')
-    reenc.register_validator_session(relay_val)
-
-    val_checker = ValidatorSequenceChecker(
-        node_id='fia_validator',
-        check_timestamps=False,
-        strict_ordering=True,
-        max_sequence_gap=50,
-    )
-    sig_verifier = ValidatorSignatureVerifier(
-        node_id='fia_validator'
-    )
-    sig_verifier.register_node(
-        'mercedes_car', signer.public_key_bytes
-    )
-    zkp   = ZKPVerifier(node_id='fia_validator')
-    audit = AuditLogger(
-        node_id='fia_validator', log_to_file=False
-    )
-
-    return {
-        'sim':          sim,
-        'builder':      builder,
-        'signer':       signer,
-        'enc':          enc,
-        'dec':          dec,
-        'reenc':        reenc,
-        'val_eng':      val_eng,
-        'val_checker':  val_checker,
-        'sig_verifier': sig_verifier,
-        'zkp':          zkp,
-        'audit':        audit,
-    }
+from sequence_checker import ValidatorSequenceChecker
+from signature_verifier import ValidatorSignatureVerifier
+from zkp_verifier import ZKPVerifier
 
 
-def make_val_packet(p: dict) -> dict:
-    """Build one full pipeline validator packet."""
-    frame  = p['sim'].get_next_frame()
-    packet = p['builder'].build(frame)
-    signed = p['signer'].sign_packet(packet)
-    commit = ZKPVerifier.generate_commitment(
-        signed['payload']
-    )
-    enc    = p['enc'].encrypt_packet(signed)
-    dec    = p['dec'].decrypt(enc)
-    reenc  = p['reenc'].reencrypt(dec)
-    pt     = p['val_eng'].decrypt(
-        nonce=reenc['nonce_bytes'],
-        ciphertext=reenc['ciphertext_bytes'],
-        associated_data=reenc['header'],
-    )
-    val_pkt = dict(reenc)
-    val_pkt['payload_bytes']  = pt
-    val_pkt['original_node']  = 'mercedes_car'
-    val_pkt['zkp_commitment'] = commit['commitment']
-    val_pkt['zkp_nonce']      = commit['nonce']
-    return val_pkt
+# ================================================================
+# CONFIGURATION
+# ================================================================
+
+RANDOM_SEED = 42
+
+TEAM = "mercedes"
+RACE = "Bahrain"
+SESSION = "R"
+
+CAR_NODE = "mercedes_car"
+RELAY_NODE = "relay_01"
+
+RELAY_VAL_NODE = "relay_val"
+VALIDATOR_NODE = "validator"
+
+RESULTS_DIR = os.path.join(
+    os.path.dirname(__file__),
+    "results",
+)
+
+RESULTS_FILE = os.path.join(
+    RESULTS_DIR,
+    "packet_loss_results.json",
+)
 
 
-def process_at_validator(p: dict, pkt: dict) -> bool:
-    """Run validator checks. Returns True if accepted."""
-    from cryptography.exceptions import InvalidSignature
-    from signature_verifier import SignatureVerificationError
+# ================================================================
+# PIPELINE
+# ================================================================
 
-    try:
-        p['sig_verifier'].verify(pkt)
-    except (InvalidSignature, SignatureVerificationError):
-        return False
-
-    seq = p['val_checker'].check(pkt)
-    if not seq.passed:
-        return False
-
-    zkp = p['zkp'].verify_packet(pkt)
-    return zkp.verified
-
-
-# ── Scenario simulations ─────────────────────────────────────────
-
-def sim_1_random_loss(p: dict) -> dict:
+class PitCryptPipeline:
     """
-    Scenario: Packets dropped randomly at various rates.
-    Measures: Gap detection, recovery, acceptance rate.
+    Builds one complete:
+
+        Sensor
+          ↓
+        PacketBuilder
+          ↓
+        Ed25519 Signer
+          ↓
+        Car encryption
+          ↓
+        Relay decrypt
+          ↓
+        Relay re-encryption
+          ↓
+        Validator decrypt
+          ↓
+        Signature verification
+          ↓
+        Sequence checking
+          ↓
+        Commitment verification
+
+    pipeline.
+
+    The packet-loss simulator operates AFTER this packet has
+    been constructed, allowing network-loss behaviour to be
+    evaluated without modifying the cryptographic pipeline.
     """
-    print("\n[Scenario 1] Random Packet Loss")
 
-    loss_rates = [0.05, 0.10, 0.20]
-    scenario_results = []
+    def __init__(self):
+        print("\n" + "=" * 65)
+        print("  Building PitCrypt-F1 evaluation pipeline")
+        print("=" * 65)
 
-    for rate in loss_rates:
-        n_packets  = 50
-        sent       = 0
-        dropped    = 0
-        accepted   = 0
-        gaps_seen  = 0
+        # --------------------------------------------------------
+        # Sensor
+        # --------------------------------------------------------
 
-        # Fresh checker for each rate
-        checker = ValidatorSequenceChecker(
-            node_id=f'val_{int(rate*100)}pct',
-            check_timestamps=False,
-            strict_ordering=True,
-            max_sequence_gap=10,
+        self.sensor = SensorSimulator(
+            team=TEAM,
+            race=RACE,
+            session=SESSION,
+            add_noise=False,
+            inject_anomalies=False,
         )
 
-        for _ in range(n_packets):
-            pkt = make_val_packet(p)
-            sent += 1
+        # --------------------------------------------------------
+        # Packet builder
+        # --------------------------------------------------------
 
-            # Simulate random loss
-            if random.random() < rate:
-                dropped += 1
-                continue
+        self.builder = PacketBuilder(
+            team=TEAM,
+            session=SESSION,
+            node_id=CAR_NODE,
+        )
 
-            # Process surviving packet
-            from cryptography.exceptions import InvalidSignature
-            from signature_verifier import (
-                SignatureVerificationError
+        # --------------------------------------------------------
+        # Car signing identity
+        # --------------------------------------------------------
+
+        self.signer = PacketSigner(
+            node_id=CAR_NODE
+        )
+
+        # --------------------------------------------------------
+        # Car -> Relay ECDH
+        # --------------------------------------------------------
+
+        self.car_engine = CryptoEngine(
+            node_id=CAR_NODE
+        )
+
+        self.relay_engine = CryptoEngine(
+            node_id=RELAY_NODE
+        )
+
+        car_public = self.car_engine.new_session()
+        relay_public = self.relay_engine.new_session()
+
+        self.car_engine.complete_handshake(
+            relay_public
+        )
+
+        self.relay_engine.complete_handshake(
+            car_public
+        )
+
+        self.encryptor = PacketEncryptor(
+            crypto_engine=self.car_engine,
+            node_id=CAR_NODE,
+        )
+
+        self.decryptor = RelayDecryptor(
+            node_id=RELAY_NODE
+        )
+
+        self.decryptor.register_session(
+            CAR_NODE,
+            self.relay_engine,
+        )
+
+        # --------------------------------------------------------
+        # Relay -> Validator ECDH
+        # --------------------------------------------------------
+
+        self.relay_val_engine = CryptoEngine(
+            node_id=RELAY_VAL_NODE
+        )
+
+        self.validator_engine = CryptoEngine(
+            node_id=VALIDATOR_NODE
+        )
+
+        relay_val_public = (
+            self.relay_val_engine.new_session()
+        )
+
+        validator_public = (
+            self.validator_engine.new_session()
+        )
+
+        self.relay_val_engine.complete_handshake(
+            validator_public
+        )
+
+        self.validator_engine.complete_handshake(
+            relay_val_public
+        )
+
+        self.reencryptor = RelayReencryptor(
+            node_id=RELAY_NODE
+        )
+
+        self.reencryptor.register_validator_session(
+            self.relay_val_engine
+        )
+
+        # --------------------------------------------------------
+        # Validator security components
+        # --------------------------------------------------------
+
+        self.signature_verifier = (
+            ValidatorSignatureVerifier(
+                node_id="fia_validator"
             )
-            try:
-                p['sig_verifier'].verify(pkt)
-            except (
-                InvalidSignature, SignatureVerificationError
-            ):
-                continue
-
-            seq_result = checker.check(pkt)
-            if seq_result.warnings:
-                gaps_seen += len(seq_result.warnings)
-            if seq_result.passed:
-                zkp = p['zkp'].verify_packet(pkt)
-                if zkp.verified:
-                    accepted += 1
-
-        actual_rate = round(dropped / sent, 3)
-        print(
-            f"  Loss {int(rate*100):3d}%: "
-            f"sent={sent} "
-            f"dropped={dropped} "
-            f"accepted={accepted} "
-            f"gaps={gaps_seen} "
-            f"actual_rate={actual_rate}"
         )
 
-        scenario_results.append({
-            'configured_loss_pct': int(rate * 100),
-            'sent':          sent,
-            'dropped':       dropped,
-            'accepted':      accepted,
-            'gaps_detected': gaps_seen,
-            'actual_rate':   actual_rate,
-        })
-
-    return {
-        'scenario':  'random_loss',
-        'results':   scenario_results,
-    }
-
-
-def sim_2_burst_loss(p: dict) -> dict:
-    """
-    Scenario: Consecutive packets dropped (network blip).
-    Measures: Gap detection during burst, recovery after.
-    """
-    print("\n[Scenario 2] Burst Packet Loss")
-
-    burst_sizes = [3, 5, 10]
-    scenario_results = []
-
-    for burst in burst_sizes:
-        n_packets   = 30
-        burst_start = 10
-        accepted    = 0
-        dropped     = 0
-        gaps_seen   = 0
-
-        checker = ValidatorSequenceChecker(
-            node_id=f'val_burst_{burst}',
-            check_timestamps=False,
-            strict_ordering=True,
-            max_sequence_gap=2,
+        self.signature_verifier.register_node(
+            CAR_NODE,
+            self.signer.public_key_bytes,
         )
 
-        for i in range(n_packets):
-            pkt = make_val_packet(p)
-
-            # Drop burst window
-            if burst_start <= i < burst_start + burst:
-                dropped += 1
-                continue
-
-            from cryptography.exceptions import InvalidSignature
-            from signature_verifier import (
-                SignatureVerificationError
-            )
-            try:
-                p['sig_verifier'].verify(pkt)
-            except (
-                InvalidSignature, SignatureVerificationError
-            ):
-                continue
-
-            seq_result = checker.check(pkt)
-            if seq_result.warnings:
-                gaps_seen += 1
-            if seq_result.passed:
-                zkp = p['zkp'].verify_packet(pkt)
-                if zkp.verified:
-                    accepted += 1
-
-        print(
-            f"  Burst {burst:2d} pkts: "
-            f"dropped={dropped} "
-            f"accepted={accepted} "
-            f"gaps_detected={gaps_seen}"
+        self.zkp_verifier = ZKPVerifier(
+            node_id="fia_validator"
         )
 
-        scenario_results.append({
-            'burst_size':    burst,
-            'dropped':       dropped,
-            'accepted':      accepted,
-            'gaps_detected': gaps_seen,
-            'recovered':     accepted > 0,
-        })
+        print("\n  Pipeline ready.\n")
 
-    return {
-        'scenario': 'burst_loss',
-        'results':  scenario_results,
-    }
+    # ============================================================
+    # CREATE VALIDATOR PACKET
+    # ============================================================
 
+    def create_validator_packet(self) -> dict:
+        """
+        Produce one fully processed validator-bound packet.
 
-def sim_3_selective_loss(p: dict) -> dict:
-    """
-    Scenario: Specific sequence numbers dropped.
-    Measures: Gap detection for known missing sequences.
-    """
-    print("\n[Scenario 3] Selective Packet Loss")
+        Packet is completely constructed before the network-loss
+        simulation decides whether it reaches the validator.
+        """
 
-    n_packets    = 20
-    drop_indices = {3, 7, 12, 15}
-    accepted     = 0
-    dropped      = 0
-    gaps_seen    = 0
+        # Sensor
+        frame = self.sensor.get_next_frame()
 
-    checker = ValidatorSequenceChecker(
-        node_id='val_selective',
-        check_timestamps=False,
-        strict_ordering=True,
-        max_sequence_gap=2,
-    )
+        if frame is None:
+            self.sensor.reset()
+            frame = self.sensor.get_next_frame()
 
-    from cryptography.exceptions import InvalidSignature
-    from signature_verifier import SignatureVerificationError
+        # Packet creation
+        packet = self.builder.build(frame)
 
-    for i in range(n_packets):
-        pkt = make_val_packet(p)
+        # Ed25519 signature
+        signed = self.signer.sign_packet(packet)
 
-        if i in drop_indices:
-            dropped += 1
-            print(
-                f"  Dropped seq={pkt['sequence_no']} "
-                f"(index={i})"
-            )
-            continue
+        # Commitment generated over original plaintext payload
+        commitment = ZKPVerifier.generate_commitment(
+            signed["payload"]
+        )
+
+        # Car -> Relay encryption
+        encrypted = self.encryptor.encrypt_packet(
+            signed
+        )
+
+        # Relay decrypt
+        decrypted = self.decryptor.decrypt(
+            encrypted
+        )
+
+        # Relay -> Validator re-encryption
+        reencrypted = self.reencryptor.reencrypt(
+            decrypted
+        )
+
+        # Validator decrypts second encryption leg
+        plaintext = self.validator_engine.decrypt(
+            nonce=reencrypted["nonce_bytes"],
+            ciphertext=reencrypted["ciphertext_bytes"],
+            associated_data=reencrypted["header"],
+        )
+
+        # Build validator-side packet
+        validator_packet = dict(reencrypted)
+
+        validator_packet["payload_bytes"] = plaintext
+        validator_packet["original_node"] = CAR_NODE
+
+        validator_packet["zkp_commitment"] = (
+            commitment["commitment"]
+        )
+
+        validator_packet["zkp_nonce"] = (
+            commitment["nonce"]
+        )
+
+        return validator_packet
+
+    # ============================================================
+    # VALIDATE PACKET
+    # ============================================================
+
+    def validate_packet(
+        self,
+        packet: dict,
+        sequence_checker: ValidatorSequenceChecker,
+    ) -> dict:
+        """
+        Run validator-side checks.
+
+        A packet is accepted only if:
+
+            signature == valid
+            sequence == valid
+            commitment == valid
+        """
+
+        result = {
+            "accepted": False,
+            "signature_valid": False,
+            "sequence_valid": False,
+            "commitment_valid": False,
+            "sequence_warnings": [],
+            "sequence_errors": [],
+        }
+
+        # --------------------------------------------------------
+        # Signature
+        # --------------------------------------------------------
 
         try:
-            p['sig_verifier'].verify(pkt)
-        except (InvalidSignature, SignatureVerificationError):
-            continue
+            signature_result = (
+                self.signature_verifier.verify(packet)
+            )
 
-        seq_result = checker.check(pkt)
-        if seq_result.warnings:
-            gaps_seen += 1
-        if seq_result.passed:
-            zkp = p['zkp'].verify_packet(pkt)
-            if zkp.verified:
-                accepted += 1
+            result["signature_valid"] = (
+                signature_result["verified"]
+            )
 
-    print(
-        f"  Selective drop: "
-        f"dropped={dropped} "
-        f"accepted={accepted} "
-        f"gaps_detected={gaps_seen}"
-    )
+        except Exception:
+            result["signature_valid"] = False
 
-    return {
-        'scenario':      'selective_loss',
-        'drop_indices':  list(drop_indices),
-        'dropped':       dropped,
-        'accepted':      accepted,
-        'gaps_detected': gaps_seen,
-        'recovered':     accepted > 0,
-    }
+        # --------------------------------------------------------
+        # Sequence
+        # --------------------------------------------------------
 
-
-def sim_4_recovery(p: dict) -> dict:
-    """
-    Scenario: Normal → loss episode → recovery.
-    Measures: Pipeline continues accepting after loss stops.
-    """
-    print("\n[Scenario 4] Pipeline Recovery After Loss")
-
-    checker = ValidatorSequenceChecker(
-        node_id='val_recovery',
-        check_timestamps=False,
-        strict_ordering=True,
-        max_sequence_gap=20,
-    )
-
-    from cryptography.exceptions import InvalidSignature
-    from signature_verifier import SignatureVerificationError
-
-    phases = [
-        ('normal',   10, 0.00),
-        ('loss',     10, 1.00),
-        ('recovery', 10, 0.00),
-    ]
-
-    phase_results = []
-    for phase_name, n, loss_rate in phases:
-        accepted = 0
-        dropped  = 0
-
-        for _ in range(n):
-            pkt = make_val_packet(p)
-
-            if random.random() < loss_rate:
-                dropped += 1
-                continue
-
-            try:
-                p['sig_verifier'].verify(pkt)
-            except (
-                InvalidSignature, SignatureVerificationError
-            ):
-                continue
-
-            seq = checker.check(pkt)
-            if seq.passed:
-                zkp = p['zkp'].verify_packet(pkt)
-                if zkp.verified:
-                    accepted += 1
-
-        print(
-            f"  Phase [{phase_name:8s}]: "
-            f"sent={n} "
-            f"dropped={dropped} "
-            f"accepted={accepted}"
+        sequence_result = sequence_checker.check(
+            packet
         )
 
-        phase_results.append({
-            'phase':    phase_name,
-            'sent':     n,
-            'dropped':  dropped,
-            'accepted': accepted,
-        })
+        result["sequence_valid"] = (
+            sequence_result.passed
+        )
 
-    recovery_phase = phase_results[2]
-    recovered = recovery_phase['accepted'] > 0
-    print(
-        f"  Pipeline recovered: "
-        f"{'✅ YES' if recovered else '❌ NO'}"
-    )
+        result["sequence_warnings"] = (
+            sequence_result.warnings
+        )
 
-    return {
-        'scenario': 'recovery',
-        'phases':   phase_results,
-        'recovered': recovered,
-    }
+        result["sequence_errors"] = (
+            sequence_result.errors
+        )
+
+        # --------------------------------------------------------
+        # Commitment
+        # --------------------------------------------------------
+
+        commitment_result = (
+            self.zkp_verifier.verify_packet(packet)
+        )
+
+        result["commitment_valid"] = (
+            commitment_result.verified
+        )
+
+        # --------------------------------------------------------
+        # Final decision
+        # --------------------------------------------------------
+
+        result["accepted"] = (
+            result["signature_valid"]
+            and result["sequence_valid"]
+            and result["commitment_valid"]
+        )
+
+        return result
 
 
-def sim_5_high_load_loss(p: dict) -> dict:
+# ================================================================
+# HELPERS
+# ================================================================
+
+def new_sequence_checker(
+    max_sequence_gap: int = 1000,
+) -> ValidatorSequenceChecker:
     """
-    Scenario: 100 packets at 5% loss rate — high load.
-    Measures: Overall acceptance rate under sustained load.
+    Create a fresh validator sequence state for each independent
+    experiment.
     """
-    print("\n[Scenario 5] High Load with Packet Loss")
 
-    n_packets  = 100
-    loss_rate  = 0.05
-    accepted   = 0
-    dropped    = 0
-    start      = time.time()
-
-    checker = ValidatorSequenceChecker(
-        node_id='val_highload',
+    return ValidatorSequenceChecker(
+        node_id="fia_validator",
+        max_sequence_gap=max_sequence_gap,
         check_timestamps=False,
         strict_ordering=True,
-        max_sequence_gap=10,
     )
 
-    from cryptography.exceptions import InvalidSignature
-    from signature_verifier import SignatureVerificationError
 
-    for _ in range(n_packets):
-        pkt = make_val_packet(p)
+def loss_rate(
+    dropped: int,
+    transmitted: int,
+) -> float:
+    """
+    Actual network loss rate.
+    """
 
-        if random.random() < loss_rate:
-            dropped += 1
-            continue
+    total = dropped + transmitted
 
-        try:
-            p['sig_verifier'].verify(pkt)
-        except (InvalidSignature, SignatureVerificationError):
-            continue
+    if total == 0:
+        return 0.0
 
-        seq = checker.check(pkt)
-        if seq.passed:
-            zkp = p['zkp'].verify_packet(pkt)
-            if zkp.verified:
-                accepted += 1
+    return dropped / total
 
-    elapsed      = time.time() - start
-    accept_rate  = round(accepted / n_packets, 3)
-    pkt_per_sec  = round(n_packets / elapsed, 1)
 
-    print(
-        f"  Packets: {n_packets} | "
-        f"Dropped: {dropped} | "
-        f"Accepted: {accepted}"
-    )
-    print(
-        f"  Accept rate: {accept_rate:.1%} | "
-        f"Throughput: {pkt_per_sec:.0f} pkt/s"
-    )
-
+def base_result(
+    scenario: str,
+) -> dict:
     return {
-        'scenario':    'high_load_loss',
-        'n_packets':   n_packets,
-        'loss_rate':   loss_rate,
-        'dropped':     dropped,
-        'accepted':    accepted,
-        'accept_rate': accept_rate,
-        'pkt_per_sec': pkt_per_sec,
-        'elapsed_s':   round(elapsed, 3),
+        "scenario": scenario,
+        "generated": 0,
+        "transmitted": 0,
+        "dropped": 0,
+        "accepted": 0,
+        "rejected": 0,
+        "actual_loss_rate": 0.0,
+        "sequence_gaps_detected": 0,
+        "replay_detections": 0,
+        "signature_failures": 0,
+        "commitment_failures": 0,
     }
 
 
-# ── Main ──────────────────────────────────────────────────────────
+# ================================================================
+# SCENARIO 1 — RANDOM LOSS
+# ================================================================
+
+def scenario_random_loss(
+    pipeline: PitCryptPipeline,
+    packet_count: int = 200,
+) -> list:
+    """
+    Evaluate random packet loss at:
+
+        0%, 1%, 5%, 10%, 20%
+    """
+
+    print("\n" + "=" * 65)
+    print("  SCENARIO 1 — RANDOM PACKET LOSS")
+    print("=" * 65)
+
+    results = []
+
+    for configured_rate in [
+        0.00,
+        0.01,
+        0.05,
+        0.10,
+        0.20,
+    ]:
+
+        print(
+            f"\n  Testing configured loss: "
+            f"{configured_rate * 100:.0f}%"
+        )
+
+        random.seed(
+            RANDOM_SEED
+            + int(configured_rate * 1000)
+        )
+
+        checker = new_sequence_checker(
+            max_sequence_gap=1000
+        )
+
+        result = base_result(
+            f"random_{int(configured_rate * 100)}pct"
+        )
+
+        result["configured_loss_rate"] = (
+            configured_rate
+        )
+
+        result["packet_count"] = packet_count
+
+        for _ in range(packet_count):
+
+            packet = pipeline.create_validator_packet()
+
+            result["generated"] += 1
+
+            # ----------------------------------------------------
+            # Simulated network loss
+            # ----------------------------------------------------
+
+            if random.random() < configured_rate:
+                result["dropped"] += 1
+                continue
+
+            result["transmitted"] += 1
+
+            # ----------------------------------------------------
+            # Validator
+            # ----------------------------------------------------
+
+            validation = pipeline.validate_packet(
+                packet,
+                checker,
+            )
+
+            if validation["accepted"]:
+                result["accepted"] += 1
+            else:
+                result["rejected"] += 1
+
+            if validation["signature_valid"] is False:
+                result["signature_failures"] += 1
+
+            if validation["commitment_valid"] is False:
+                result["commitment_failures"] += 1
+
+        result["actual_loss_rate"] = loss_rate(
+            result["dropped"],
+            result["transmitted"],
+        )
+
+        result["sequence_gaps_detected"] = (
+            checker.gap_count
+        )
+
+        result["replay_detections"] = (
+            checker.replay_count
+        )
+
+        results.append(result)
+
+        print(
+            f"    Generated: {result['generated']}"
+        )
+        print(
+            f"    Dropped:   {result['dropped']}"
+        )
+        print(
+            f"    Accepted:  {result['accepted']}"
+        )
+        print(
+            f"    Rejected:  {result['rejected']}"
+        )
+        print(
+            f"    Actual loss: "
+            f"{result['actual_loss_rate'] * 100:.2f}%"
+        )
+        print(
+            f"    Gaps:      "
+            f"{result['sequence_gaps_detected']}"
+        )
+
+    return results
+
+
+# ================================================================
+# SCENARIO 2 — BURST LOSS
+# ================================================================
+
+def scenario_burst_loss(
+    pipeline: PitCryptPipeline,
+    packet_count: int = 100,
+) -> list:
+    """
+    Drop 3, 5 and 10 consecutive packets.
+    """
+
+    print("\n" + "=" * 65)
+    print("  SCENARIO 2 — BURST PACKET LOSS")
+    print("=" * 65)
+
+    results = []
+
+    for burst_size in [3, 5, 10]:
+
+        print(
+            f"\n  Testing burst of "
+            f"{burst_size} packets"
+        )
+
+        checker = new_sequence_checker(
+            max_sequence_gap=1
+        )
+
+        result = base_result(
+            f"burst_{burst_size}"
+        )
+
+        result["burst_size"] = burst_size
+        result["packet_count"] = packet_count
+
+        # Drop one deterministic burst starting at packet 30.
+        burst_start = 30
+        burst_end = burst_start + burst_size
+
+        for index in range(packet_count):
+
+            packet = pipeline.create_validator_packet()
+
+            result["generated"] += 1
+
+            if burst_start <= index < burst_end:
+                result["dropped"] += 1
+                continue
+
+            result["transmitted"] += 1
+
+            validation = pipeline.validate_packet(
+                packet,
+                checker,
+            )
+
+            if validation["accepted"]:
+                result["accepted"] += 1
+            else:
+                result["rejected"] += 1
+
+            if not validation["signature_valid"]:
+                result["signature_failures"] += 1
+
+            if not validation["commitment_valid"]:
+                result["commitment_failures"] += 1
+
+        result["actual_loss_rate"] = loss_rate(
+            result["dropped"],
+            result["transmitted"],
+        )
+
+        result["sequence_gaps_detected"] = (
+            checker.gap_count
+        )
+
+        result["replay_detections"] = (
+            checker.replay_count
+        )
+
+        results.append(result)
+
+        print(
+            f"    Dropped: {result['dropped']}"
+        )
+        print(
+            f"    Accepted: {result['accepted']}"
+        )
+        print(
+            f"    Rejected: {result['rejected']}"
+        )
+        print(
+            f"    Gaps: {result['sequence_gaps_detected']}"
+        )
+
+    return results
+
+
+# ================================================================
+# SCENARIO 3 — SELECTIVE LOSS
+# ================================================================
+
+def scenario_selective_loss(
+    pipeline: PitCryptPipeline,
+    packet_count: int = 100,
+) -> dict:
+    """
+    Drop specific packet positions rather than a contiguous burst.
+    """
+
+    print("\n" + "=" * 65)
+    print("  SCENARIO 3 — SELECTIVE PACKET LOSS")
+    print("=" * 65)
+
+    checker = new_sequence_checker(
+        max_sequence_gap=1
+    )
+
+    # Deterministic packet positions.
+    drop_positions = {
+        10,
+        25,
+        40,
+        55,
+        70,
+        75,
+        85,
+        95,
+    }
+
+    result = base_result(
+        "selective_loss"
+    )
+
+    result["packet_count"] = packet_count
+    result["drop_positions"] = sorted(
+        drop_positions
+    )
+
+    for index in range(packet_count):
+
+        packet = pipeline.create_validator_packet()
+
+        result["generated"] += 1
+
+        if index in drop_positions:
+            result["dropped"] += 1
+            continue
+
+        result["transmitted"] += 1
+
+        validation = pipeline.validate_packet(
+            packet,
+            checker,
+        )
+
+        if validation["accepted"]:
+            result["accepted"] += 1
+        else:
+            result["rejected"] += 1
+
+        if not validation["signature_valid"]:
+            result["signature_failures"] += 1
+
+        if not validation["commitment_valid"]:
+            result["commitment_failures"] += 1
+
+    result["actual_loss_rate"] = loss_rate(
+        result["dropped"],
+        result["transmitted"],
+    )
+
+    result["sequence_gaps_detected"] = (
+        checker.gap_count
+    )
+
+    result["replay_detections"] = (
+        checker.replay_count
+    )
+
+    print(
+        f"\n    Generated: {result['generated']}"
+    )
+    print(
+        f"    Dropped:   {result['dropped']}"
+    )
+    print(
+        f"    Accepted:  {result['accepted']}"
+    )
+    print(
+        f"    Rejected:  {result['rejected']}"
+    )
+    print(
+        f"    Gaps:      "
+        f"{result['sequence_gaps_detected']}"
+    )
+
+    return result
+
+
+# ================================================================
+# SCENARIO 4 — RECOVERY
+# ================================================================
+
+def scenario_recovery(
+    pipeline: PitCryptPipeline,
+    phase_packets: int = 50,
+) -> dict:
+    """
+    Three phases:
+
+        Phase 1 — normal traffic
+        Phase 2 — complete packet loss
+        Phase 3 — traffic recovery
+
+    Recovery timing measures the time between restoration of
+    transmission and the first successfully accepted packet.
+    """
+
+    print("\n" + "=" * 65)
+    print("  SCENARIO 4 — PACKET LOSS RECOVERY")
+    print("=" * 65)
+
+    checker = new_sequence_checker(
+        max_sequence_gap=1000
+    )
+
+    result = {
+        "scenario": "recovery",
+        "phase_packets": phase_packets,
+        "normal": {
+            "generated": 0,
+            "transmitted": 0,
+            "accepted": 0,
+        },
+        "loss": {
+            "generated": 0,
+            "transmitted": 0,
+            "dropped": 0,
+            "accepted": 0,
+        },
+        "recovery": {
+            "generated": 0,
+            "transmitted": 0,
+            "accepted": 0,
+        },
+        "recovery_time_ms": None,
+        "recovery_successful": False,
+        "sequence_gaps_detected": 0,
+    }
+
+    # ------------------------------------------------------------
+    # Phase 1 — normal
+    # ------------------------------------------------------------
+
+    print("\n  Phase 1 — normal traffic")
+
+    for _ in range(phase_packets):
+
+        packet = pipeline.create_validator_packet()
+
+        result["normal"]["generated"] += 1
+        result["normal"]["transmitted"] += 1
+
+        validation = pipeline.validate_packet(
+            packet,
+            checker,
+        )
+
+        if validation["accepted"]:
+            result["normal"]["accepted"] += 1
+
+    # ------------------------------------------------------------
+    # Phase 2 — complete loss
+    # ------------------------------------------------------------
+
+    print("  Phase 2 — complete packet loss")
+
+    for _ in range(phase_packets):
+
+        # Packet exists but never reaches validator.
+        pipeline.create_validator_packet()
+
+        result["loss"]["generated"] += 1
+        result["loss"]["dropped"] += 1
+
+    # ------------------------------------------------------------
+    # Phase 3 — recovery
+    # ------------------------------------------------------------
+
+    print("  Phase 3 — traffic recovery")
+
+    recovery_start = time.perf_counter()
+
+    for _ in range(phase_packets):
+
+        packet = pipeline.create_validator_packet()
+
+        result["recovery"]["generated"] += 1
+        result["recovery"]["transmitted"] += 1
+
+        validation = pipeline.validate_packet(
+            packet,
+            checker,
+        )
+
+        if validation["accepted"]:
+
+            result["recovery"]["accepted"] += 1
+
+            if not result["recovery_successful"]:
+
+                result["recovery_time_ms"] = (
+                    time.perf_counter()
+                    - recovery_start
+                ) * 1000.0
+
+                result["recovery_successful"] = True
+
+    result["sequence_gaps_detected"] = (
+        checker.gap_count
+    )
+
+    print(
+        f"\n    Normal accepted: "
+        f"{result['normal']['accepted']}"
+    )
+
+    print(
+        f"    Lost packets: "
+        f"{result['loss']['dropped']}"
+    )
+
+    print(
+        f"    Recovery accepted: "
+        f"{result['recovery']['accepted']}"
+    )
+
+    print(
+        f"    Recovery successful: "
+        f"{result['recovery_successful']}"
+    )
+
+    print(
+        f"    Recovery time: "
+        f"{result['recovery_time_ms']}"
+        f" ms"
+    )
+
+    print(
+        f"    Sequence gaps: "
+        f"{result['sequence_gaps_detected']}"
+    )
+
+    return result
+
+
+# ================================================================
+# SCENARIO 5 — HIGH LOAD
+# ================================================================
+
+def scenario_high_load(
+    pipeline: PitCryptPipeline,
+    packet_count: int = 1000,
+    configured_loss: float = 0.05,
+) -> dict:
+    """
+    Larger workload under controlled random packet loss.
+
+    Uses perf_counter() for elapsed time.
+    """
+
+    print("\n" + "=" * 65)
+    print("  SCENARIO 5 — HIGH-LOAD PACKET LOSS")
+    print("=" * 65)
+
+    random.seed(
+        RANDOM_SEED + 500
+    )
+
+    checker = new_sequence_checker(
+        max_sequence_gap=1000
+    )
+
+    result = base_result(
+        "high_load"
+    )
+
+    result["packet_count"] = packet_count
+    result["configured_loss_rate"] = configured_loss
+
+    start = time.perf_counter()
+
+    for _ in range(packet_count):
+
+        packet = pipeline.create_validator_packet()
+
+        result["generated"] += 1
+
+        if random.random() < configured_loss:
+            result["dropped"] += 1
+            continue
+
+        result["transmitted"] += 1
+
+        validation = pipeline.validate_packet(
+            packet,
+            checker,
+        )
+
+        if validation["accepted"]:
+            result["accepted"] += 1
+        else:
+            result["rejected"] += 1
+
+        if not validation["signature_valid"]:
+            result["signature_failures"] += 1
+
+        if not validation["commitment_valid"]:
+            result["commitment_failures"] += 1
+
+    elapsed = time.perf_counter() - start
+
+    result["elapsed_seconds"] = elapsed
+
+    result["processing_rate_packets_per_second"] = (
+        result["generated"] / elapsed
+        if elapsed > 0
+        else 0.0
+    )
+
+    result["transmitted_rate_packets_per_second"] = (
+        result["transmitted"] / elapsed
+        if elapsed > 0
+        else 0.0
+    )
+
+    result["actual_loss_rate"] = loss_rate(
+        result["dropped"],
+        result["transmitted"],
+    )
+
+    result["sequence_gaps_detected"] = (
+        checker.gap_count
+    )
+
+    result["replay_detections"] = (
+        checker.replay_count
+    )
+
+    print(
+        f"\n    Generated: "
+        f"{result['generated']}"
+    )
+
+    print(
+        f"    Dropped: "
+        f"{result['dropped']}"
+    )
+
+    print(
+        f"    Accepted: "
+        f"{result['accepted']}"
+    )
+
+    print(
+        f"    Rejected: "
+        f"{result['rejected']}"
+    )
+
+    print(
+        f"    Actual loss: "
+        f"{result['actual_loss_rate'] * 100:.2f}%"
+    )
+
+    print(
+        f"    Processing rate: "
+        f"{result['processing_rate_packets_per_second']:.1f} pkt/s"
+    )
+
+    print(
+        f"    Sequence gaps: "
+        f"{result['sequence_gaps_detected']}"
+    )
+
+    return result
+
+
+# ================================================================
+# MAIN
+# ================================================================
 
 def main():
-    print("\n" + "="*60)
-    print("  PitCrypt-F1 — Packet Loss Simulation")
-    print("  Measuring pipeline resilience under packet loss")
-    print("="*60)
 
-    random.seed(42)
-    p       = build_pipeline()
-    results = []
-    start   = time.time()
+    random.seed(RANDOM_SEED)
 
-    results.append(sim_1_random_loss(p))
-    results.append(sim_2_burst_loss(p))
-    results.append(sim_3_selective_loss(p))
-    results.append(sim_4_recovery(p))
-    results.append(sim_5_high_load_loss(p))
+    print("\n" + "=" * 70)
+    print("  PitCrypt-F1 Packet Loss / Network Resilience Evaluation")
+    print("=" * 70)
 
-    elapsed = time.time() - start
+    print(
+        f"\n  Team:    {TEAM}"
+        f"\n  Race:    {RACE}"
+        f"\n  Session: {SESSION}"
+        f"\n  Seed:    {RANDOM_SEED}"
+    )
 
-    print("\n" + "="*60)
-    print("  Summary")
-    print("="*60)
-    for r in results:
-        print(f"  ✅ {r['scenario']}")
-    print(f"\n  Elapsed: {elapsed:.2f}s")
+    pipeline = PitCryptPipeline()
 
-    output = {
-        'simulation': 'packet_loss',
-        'timestamp':  datetime.now(timezone.utc).isoformat(),
-        'elapsed_s':  round(elapsed, 2),
-        'results':    results,
+    # ============================================================
+    # Run scenarios
+    # ============================================================
+
+    random_results = scenario_random_loss(
+        pipeline,
+        packet_count=200,
+    )
+
+    burst_results = scenario_burst_loss(
+        pipeline,
+        packet_count=100,
+    )
+
+    selective_result = scenario_selective_loss(
+        pipeline,
+        packet_count=100,
+    )
+
+    recovery_result = scenario_recovery(
+        pipeline,
+        phase_packets=50,
+    )
+
+    high_load_result = scenario_high_load(
+        pipeline,
+        packet_count=1000,
+        configured_loss=0.05,
+    )
+
+    # ============================================================
+    # Assemble results
+    # ============================================================
+
+    results = {
+        "metadata": {
+            "project": "PitCrypt-F1",
+            "experiment": "packet_loss_network_resilience",
+            "team": TEAM,
+            "race": RACE,
+            "session": SESSION,
+            "random_seed": RANDOM_SEED,
+            "generated_at": time.strftime(
+                "%Y-%m-%dT%H:%M:%SZ",
+                time.gmtime(),
+            ),
+        },
+
+        "scenarios": {
+            "random_loss": random_results,
+            "burst_loss": burst_results,
+            "selective_loss": selective_result,
+            "recovery": recovery_result,
+            "high_load": high_load_result,
+        },
     }
 
-    path = os.path.join(
-        RESULTS_DIR, 'packet_loss_results.json'
+    # ============================================================
+    # Save
+    # ============================================================
+
+    os.makedirs(
+        RESULTS_DIR,
+        exist_ok=True,
     )
-    with open(path, 'w') as f:
-        json.dump(output, f, indent=2)
 
-    print(f"\n  Results saved → {path}")
-    print(f"\n✅ Packet loss simulation complete.")
-    return output
+    with open(
+        RESULTS_FILE,
+        "w",
+        encoding="utf-8",
+    ) as f:
+
+        json.dump(
+            results,
+            f,
+            indent=2,
+        )
+
+    # ============================================================
+    # Summary
+    # ============================================================
+
+    print("\n" + "=" * 70)
+    print("  PACKET LOSS EVALUATION COMPLETE")
+    print("=" * 70)
+
+    print(
+        f"\n  Results saved to:"
+        f"\n  {RESULTS_FILE}"
+    )
+
+    print("\n  Random loss:")
+
+    for result in random_results:
+
+        print(
+            f"    "
+            f"{result['configured_loss_rate'] * 100:>5.0f}% "
+            f"configured → "
+            f"{result['actual_loss_rate'] * 100:>5.2f}% actual | "
+            f"accepted={result['accepted']:>3} | "
+            f"rejected={result['rejected']:>3} | "
+            f"gaps={result['sequence_gaps_detected']}"
+        )
+
+    print("\n  Burst loss:")
+
+    for result in burst_results:
+
+        print(
+            f"    "
+            f"{result['burst_size']:>2} packet burst → "
+            f"dropped={result['dropped']:>2} | "
+            f"accepted={result['accepted']:>3} | "
+            f"gaps={result['sequence_gaps_detected']}"
+        )
+
+    print("\n  Selective loss:")
+
+    print(
+        f"    dropped={selective_result['dropped']} | "
+        f"accepted={selective_result['accepted']} | "
+        f"gaps={selective_result['sequence_gaps_detected']}"
+    )
+
+    print("\n  Recovery:")
+
+    print(
+        f"    successful="
+        f"{recovery_result['recovery_successful']} | "
+        f"time="
+        f"{recovery_result['recovery_time_ms']} ms"
+    )
+
+    print("\n  High load:")
+
+    print(
+        f"    "
+        f"{high_load_result['processing_rate_packets_per_second']:.1f} pkt/s | "
+        f"loss="
+        f"{high_load_result['actual_loss_rate'] * 100:.2f}% | "
+        f"accepted="
+        f"{high_load_result['accepted']}"
+    )
+
+    print("\n" + "=" * 70)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
