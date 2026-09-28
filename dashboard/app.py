@@ -4,6 +4,7 @@ import time
 import json as _json
 import streamlit as st
 import plotly.graph_objects as go
+import pandas as pd
 from datetime import datetime, timezone
 from typing import Optional
 from PIL import Image
@@ -30,10 +31,12 @@ for path in [CAR_SRC, REL_SRC, VAL_SRC, IAM_SRC, DASH]:
 
 from components.telemetry_feed import TelemetryFeed
 from components.threat_panel import ThreatPanel
+from sensor_simulator import SensorSimulator
 
 
 # ── Team configuration ────────────────────────────────────────────
 TEAM_CONFIG = {
+
     "mercedes": {
         "name": "Mercedes AMG",
         "color": "#00d2be",
@@ -61,14 +64,51 @@ TEAM_CONFIG = {
     },
 }
 
+TEAM_SHORT_CODES = {
+    "mercedes": "MER",
+    "redbull": "RBR",
+    "ferrari": "FER",
+    "mclaren": "MCL",
+    "williams": "WIL",
+}
+
+
+def performance_driver_label(
+    team: str,
+    driver: str,
+    prefix_team: bool = False,
+) -> str:
+    """
+    Create the driver identifier used by the performance analyzers.
+
+    Same-team comparisons keep the normal telemetry driver code:
+        ANT
+        RUS
+
+    Cross-team comparisons prefix the constructor:
+        MER · ANT
+        FER · LEC
+
+    The actual driver codes always come from the selected telemetry
+    dataset; no driver is hardcoded here.
+    """
+    if not prefix_team:
+        return str(driver)
+
+    team_code = TEAM_SHORT_CODES.get(
+        team,
+        team.upper(),
+    )
+
+    return f"{team_code} · {driver}"
+
+
 TEAMS_WITHOUT_DATA = set()
 
 
 # ── Cached helpers ────────────────────────────────────────────────
 @st.cache_data
 def peek_drivers_and_laps(team: str, race: str, session: str):
-    import pandas as pd
-
     raw_dir = os.path.join(ROOT, 'data', 'raw')
     target = f"{team}_{race}_{session}.csv"
     path = os.path.join(raw_dir, target)
@@ -105,13 +145,7 @@ def peek_driver_laps(
 ):
     """
     Return only the laps available for a specific driver.
-
-    This is used by Driver vs Driver comparison so that the
-    second driver cannot be assigned a lap that does not exist
-    in their telemetry.
     """
-    import pandas as pd
-
     raw_dir = os.path.join(ROOT, 'data', 'raw')
     target = f"{team}_{race}_{session}.csv"
     path = os.path.join(raw_dir, target)
@@ -128,7 +162,9 @@ def peek_driver_laps(
         if 'Driver' not in df.columns or 'LapNumber' not in df.columns:
             return []
 
-        driver_df = df[df['Driver'].astype(str) == str(driver)]
+        driver_df = df[
+            df['Driver'].astype(str) == str(driver)
+        ]
 
         return sorted(
             driver_df['LapNumber']
@@ -146,13 +182,8 @@ def peek_driver_laps(
 def load_circuit_outline(race: str, team: str) -> tuple:
     """
     Load one reference lap's X/Y coordinates to draw
-    the real circuit shape. Tries multiple teams/sessions
-    until it finds usable data.
-
-    Cached so it only loads once per race/team combo.
+    the real circuit shape.
     """
-    import pandas as pd
-
     raw_dir = os.path.join(ROOT, 'data', 'raw')
 
     for t in [
@@ -512,8 +543,6 @@ with st.sidebar:
     driver_arg = None
     lap_arg = None
 
-    # Driver vs Driver requires an explicit Driver A.
-    # This avoids an ambiguous "All drivers vs Driver B" comparison.
     if (
         compare_mode
         and comparison_type == "Driver vs Driver"
@@ -532,7 +561,6 @@ with st.sidebar:
 
             driver_arg = selected_driver
 
-            # Laps for Driver A
             driver_a_laps = peek_driver_laps(
                 team,
                 race,
@@ -566,7 +594,6 @@ with st.sidebar:
             )
 
     else:
-        # Normal Team A selector
         if available_drivers:
             selected_driver = st.selectbox(
                 "Driver",
@@ -700,7 +727,6 @@ with st.sidebar:
                 f"**Driver B — {TEAM_CONFIG[team]['name']}**"
             )
 
-            # Driver A must exist before Driver B can be selected.
             if available_drivers and selected_driver != 'All drivers':
 
                 driver_b_options = [
@@ -723,9 +749,6 @@ with st.sidebar:
 
                     driver_b_arg = selected_driver_b
 
-                    # ------------------------------------------------
-                    # Find laps common to both drivers.
-                    # ------------------------------------------------
                     driver_a_laps = set(
                         peek_driver_laps(
                             team,
@@ -752,12 +775,6 @@ with st.sidebar:
 
                     if common_laps:
 
-                        # Re-render Driver A lap selector using
-                        # only laps that exist for BOTH drivers.
-                        #
-                        # The selector above may have already shown
-                        # Driver A's complete lap list. We retain
-                        # its selected value if it is valid.
                         if (
                             selected_lap != 'All laps'
                             and int(selected_lap) in common_laps
@@ -778,9 +795,6 @@ with st.sidebar:
                             f"{len(common_laps)}"
                         )
 
-                        # Separate B lap selector is intentionally
-                        # synchronized with Driver A. This ensures
-                        # the comparison uses the same lap.
                         selected_lap_b = selected_lap
                         lap_b_arg = lap_arg
 
@@ -870,7 +884,6 @@ with st.sidebar:
                     comparison_type == "Driver vs Driver"
                     and driver_b_arg
                 ):
-                    # Same team, second driver.
                     feed_b.initialise(
                         team=team,
                         race=race,
@@ -1022,7 +1035,7 @@ def build_track_map(
 
     """
     Build live track position map using real telemetry
-    X/Y for circuit outline — no straight-line artefacts.
+    X/Y for circuit outline.
     """
 
     corner_path = os.path.join(
@@ -1098,7 +1111,6 @@ def build_track_map(
 
     fig = go.Figure()
 
-    # ── Circuit outline from real telemetry ───────────────────────
     outline_x, outline_y = load_circuit_outline(
         race,
         team_key,
@@ -1181,7 +1193,6 @@ def build_track_map(
                 )
             )
 
-    # ── Telemetry trail coloured by speed ─────────────────────────
     fig.add_trace(
         go.Scatter(
             x=xs,
@@ -1229,7 +1240,6 @@ def build_track_map(
         )
     )
 
-    # ── Current position ──────────────────────────────────────────
     fig.add_trace(
         go.Scatter(
             x=[xs[-1]],
@@ -1252,7 +1262,6 @@ def build_track_map(
         )
     )
 
-    # ── Corner labels ─────────────────────────────────────────────
     for c in corners:
 
         label = (
@@ -1434,7 +1443,6 @@ def render_telemetry_column(
     else:
         st.info("No packets yet")
 
-    # ── Dual-axis speed/RPM chart ─────────────────────────────────
     history = feed_obj.get_chart_history()
 
     if history['seq']:
@@ -1520,7 +1528,6 @@ def render_telemetry_column(
             use_container_width=True,
         )
 
-    # ── Live track map ────────────────────────────────────────────
     track_fig = build_track_map(
         feed_obj,
         race,
@@ -1535,7 +1542,6 @@ def render_telemetry_column(
             key=f"track_{team_key}_{id(feed_obj)}",
         )
 
-    # ── Crypto summary ────────────────────────────────────────────
     crypto = feed_obj.get_crypto_stats()
 
     st.markdown(
@@ -1547,6 +1553,1135 @@ def render_telemetry_column(
     )
 
 
+# ── Performance telemetry loader ─────────────────────────────────
+@st.cache_data(
+    show_spinner="Loading real telemetry for performance analysis..."
+)
+def load_performance_frames(
+    requests: tuple,
+):
+    """
+    Load raw telemetry for one or more independent performance streams.
+
+    Each request is:
+
+        (
+            team,
+            race,
+            session,
+            raw_driver,
+            lap,
+            analysis_driver_label,
+        )
+
+    Example:
+
+        (
+            (
+                "mercedes",
+                "Bahrain",
+                "R",
+                "ANT",
+                1,
+                "MER · ANT",
+            ),
+            (
+                "ferrari",
+                "Bahrain",
+                "R",
+                "LEC",
+                1,
+                "FER · LEC",
+            ),
+        )
+
+    The simulator is loaded once per unique
+    team/race/session/lap combination.
+
+    This is important for Team vs Team comparisons because Team B
+    must come from its own telemetry dataset rather than being mixed
+    into Team A's stream.
+    """
+
+    grouped = {}
+    groups = {}
+
+    for request in requests:
+
+        if len(request) != 6:
+            raise ValueError(
+                "Performance telemetry request must contain "
+                "(team, race, session, raw_driver, lap, label)."
+            )
+
+        (
+            team,
+            race,
+            session,
+            raw_driver,
+            lap,
+            label,
+        ) = request
+
+        key = (
+            str(team),
+            str(race),
+            str(session),
+            int(lap),
+        )
+
+        groups.setdefault(
+            key,
+            [],
+        ).append(
+            (
+                str(raw_driver),
+                str(label),
+            )
+        )
+
+    for (
+        team,
+        race,
+        session,
+        lap,
+    ), wanted in groups.items():
+
+        simulator = SensorSimulator(
+            team=team,
+            race=race,
+            session=session,
+            driver=None,
+            lap=lap,
+            add_noise=False,
+            inject_anomalies=False,
+        )
+
+        if simulator.total_frames == 0:
+            continue
+
+        wanted_map = {
+            raw_driver: label
+            for raw_driver, label in wanted
+        }
+
+        for frame in simulator.stream(
+            n_frames=simulator.total_frames
+        ):
+
+            raw_driver = str(
+                frame.get('driver')
+            )
+
+            label = wanted_map.get(
+                raw_driver
+            )
+
+            if label is None:
+                continue
+
+            if frame.get('lap') != lap:
+                continue
+
+            record = dict(frame)
+
+            # The analyzers use "driver" as their grouping key.
+            # For cross-team comparisons this becomes a unique label,
+            # while same-team comparisons retain the normal driver code.
+            record["driver"] = label
+
+            # Preserve the actual telemetry source for traceability.
+            record["source_team"] = team
+            record["source_driver"] = raw_driver
+
+            grouped.setdefault(
+                label,
+                [],
+            ).append(record)
+
+    return grouped
+
+
+def _resolve_driver_lap(
+    team: str,
+    race: str,
+    session: str,
+    driver: str,
+    requested_lap: str,
+):
+    """
+    Resolve a lap that actually exists for the selected driver.
+
+    Team-level lap lists can contain laps that are unavailable for one
+    specific driver, so performance analysis validates the lap against
+    that driver's own telemetry.
+    """
+    driver_laps = peek_driver_laps(
+        team,
+        race,
+        session,
+        driver,
+    )
+
+    if not driver_laps:
+        return None
+
+    if requested_lap != 'All laps':
+
+        requested = int(
+            requested_lap
+        )
+
+        if requested in driver_laps:
+            return requested
+
+    return int(
+        driver_laps[0]
+    )
+
+
+def _resolve_common_lap(
+    team: str,
+    race: str,
+    session: str,
+    driver_a: str,
+    driver_b: str,
+    requested_lap: str,
+):
+    """
+    Resolve a lap available to both drivers.
+    """
+
+    laps_a = set(
+        peek_driver_laps(
+            team,
+            race,
+            session,
+            driver_a,
+        )
+    )
+
+    laps_b = set(
+        peek_driver_laps(
+            team,
+            race,
+            session,
+            driver_b,
+        )
+    )
+
+    common_laps = sorted(
+        laps_a.intersection(laps_b)
+    )
+
+    if not common_laps:
+        return None
+
+    if requested_lap != 'All laps':
+
+        requested = int(
+            requested_lap
+        )
+
+        if requested in common_laps:
+            return requested
+
+    return int(
+        common_laps[0]
+    )
+
+
+def render_performance_analysis(
+    team: str,
+    race: str,
+    session: str,
+    available_drivers: list,
+    available_laps: list,
+    selected_driver: str,
+    selected_lap: str,
+    driver_b: Optional[str] = None,
+    team_b: Optional[str] = None,
+    selected_lap_b: str = 'All laps',
+    comparison_type: Optional[str] = None,
+):
+    """
+    Render the Phase-II motorsport performance layer.
+
+    Supported modes:
+
+    1. Normal single-team analysis
+    2. Same-team Driver vs Driver
+    3. Different-team Team vs Team
+
+    The analyzers always receive raw per-frame telemetry.
+    """
+
+    st.divider()
+
+    st.markdown(
+        "### 🏎️ Performance Analysis"
+    )
+
+    st.caption(
+        "Real per-frame telemetry analysis using the same performance "
+        "modules validated by test_real_performance.py. "
+        "Observed span is simulator/data span, not official lap time."
+    )
+
+    if not available_drivers or not available_laps:
+        st.info(
+            "Performance analysis is unavailable for this "
+            "telemetry selection."
+        )
+        return
+
+    session_label = {
+        'R': 'Race',
+        'Q': 'Qualifying',
+        'S': 'Sprint',
+    }.get(
+        session,
+        session,
+    )
+
+    # ==============================================================
+    # Resolve telemetry streams
+    # ==============================================================
+
+    requests = []
+    lap_by_label = {}
+    team_by_label = {}
+
+    # --------------------------------------------------------------
+    # TEAM VS TEAM
+    # --------------------------------------------------------------
+    if (
+        comparison_type == "Team vs Team"
+        and team_b
+    ):
+
+        b_available_drivers, b_available_laps = (
+            peek_drivers_and_laps(
+                team_b,
+                race,
+                session,
+            )
+        )
+
+        if not b_available_drivers or not b_available_laps:
+            st.warning(
+                f"Performance telemetry is unavailable for "
+                f"{TEAM_CONFIG[team_b]['name']} at "
+                f"{race} ({session_label})."
+            )
+            return
+
+        driver_a_raw = (
+            selected_driver
+            if selected_driver != 'All drivers'
+            else available_drivers[0]
+        )
+
+        driver_b_raw = (
+            driver_b
+            if driver_b
+            and driver_b != 'All drivers'
+            else b_available_drivers[0]
+        )
+
+        lap_a = _resolve_driver_lap(
+            team,
+            race,
+            session,
+            driver_a_raw,
+            selected_lap,
+        )
+
+        lap_b = _resolve_driver_lap(
+            team_b,
+            race,
+            session,
+            driver_b_raw,
+            selected_lap_b,
+        )
+
+        if lap_a is None:
+            st.warning(
+                f"No usable telemetry lap was found for "
+                f"{TEAM_CONFIG[team]['name']} "
+                f"{driver_a_raw}."
+            )
+            return
+
+        if lap_b is None:
+            st.warning(
+                f"No usable telemetry lap was found for "
+                f"{TEAM_CONFIG[team_b]['name']} "
+                f"{driver_b_raw}."
+            )
+            return
+
+        label_a = performance_driver_label(
+            team,
+            driver_a_raw,
+            prefix_team=True,
+        )
+
+        label_b = performance_driver_label(
+            team_b,
+            driver_b_raw,
+            prefix_team=True,
+        )
+
+        requests = (
+            (
+                team,
+                race,
+                session,
+                driver_a_raw,
+                lap_a,
+                label_a,
+            ),
+            (
+                team_b,
+                race,
+                session,
+                driver_b_raw,
+                lap_b,
+                label_b,
+            ),
+        )
+
+        lap_by_label[label_a] = lap_a
+        lap_by_label[label_b] = lap_b
+
+        team_by_label[label_a] = team
+        team_by_label[label_b] = team_b
+
+        st.markdown(
+            f"**Data:** "
+            f"{TEAM_CONFIG[team]['name']} · {driver_a_raw} · "
+            f"Lap {lap_a} "
+            f"**vs** "
+            f"{TEAM_CONFIG[team_b]['name']} · {driver_b_raw} · "
+            f"Lap {lap_b} "
+            f"· {race} · {session_label}"
+        )
+
+    # --------------------------------------------------------------
+    # DRIVER VS DRIVER
+    # --------------------------------------------------------------
+    elif (
+        comparison_type == "Driver vs Driver"
+        and driver_b
+    ):
+
+        if selected_driver == 'All drivers':
+            st.info(
+                "Select Driver A to run Driver vs Driver analysis."
+            )
+            return
+
+        driver_a_raw = selected_driver
+        driver_b_raw = driver_b
+
+        common_lap = _resolve_common_lap(
+            team,
+            race,
+            session,
+            driver_a_raw,
+            driver_b_raw,
+            selected_lap,
+        )
+
+        if common_lap is None:
+            st.warning(
+                f"No common telemetry lap was found for "
+                f"{driver_a_raw} and {driver_b_raw}."
+            )
+            return
+
+        label_a = performance_driver_label(
+            team,
+            driver_a_raw,
+            prefix_team=False,
+        )
+
+        label_b = performance_driver_label(
+            team,
+            driver_b_raw,
+            prefix_team=False,
+        )
+
+        requests = (
+            (
+                team,
+                race,
+                session,
+                driver_a_raw,
+                common_lap,
+                label_a,
+            ),
+            (
+                team,
+                race,
+                session,
+                driver_b_raw,
+                common_lap,
+                label_b,
+            ),
+        )
+
+        lap_by_label[label_a] = common_lap
+        lap_by_label[label_b] = common_lap
+
+        team_by_label[label_a] = team
+        team_by_label[label_b] = team
+
+        st.markdown(
+            f"**Data:** "
+            f"{TEAM_CONFIG[team]['name']} · "
+            f"{driver_a_raw} vs {driver_b_raw} · "
+            f"{race} · {session_label} · "
+            f"Lap {common_lap}"
+        )
+
+    # --------------------------------------------------------------
+    # NORMAL SINGLE-TEAM PERFORMANCE VIEW
+    # --------------------------------------------------------------
+    else:
+
+        if selected_driver != 'All drivers':
+
+            driver_a_raw = selected_driver
+
+            lap_a = _resolve_driver_lap(
+                team,
+                race,
+                session,
+                driver_a_raw,
+                selected_lap,
+            )
+
+            if lap_a is None:
+                st.warning(
+                    f"No usable telemetry was found for "
+                    f"{driver_a_raw}."
+                )
+                return
+
+            label_a = performance_driver_label(
+                team,
+                driver_a_raw,
+                prefix_team=False,
+            )
+
+            requests = (
+                (
+                    team,
+                    race,
+                    session,
+                    driver_a_raw,
+                    lap_a,
+                    label_a,
+                ),
+            )
+
+            lap_by_label[label_a] = lap_a
+            team_by_label[label_a] = team
+
+            st.markdown(
+                f"**Data:** "
+                f"{TEAM_CONFIG[team]['name']} · "
+                f"{driver_a_raw} · "
+                f"{race} · {session_label} · "
+                f"Lap {lap_a}"
+            )
+
+        else:
+
+            performance_drivers = available_drivers[:2]
+
+            if not performance_drivers:
+                st.info(
+                    "No drivers are available for performance analysis."
+                )
+                return
+
+            if len(performance_drivers) == 1:
+
+                driver_a_raw = performance_drivers[0]
+
+                lap_a = _resolve_driver_lap(
+                    team,
+                    race,
+                    session,
+                    driver_a_raw,
+                    selected_lap,
+                )
+
+                if lap_a is None:
+                    st.warning(
+                        f"No usable telemetry was found for "
+                        f"{driver_a_raw}."
+                    )
+                    return
+
+                label_a = performance_driver_label(
+                    team,
+                    driver_a_raw,
+                    prefix_team=False,
+                )
+
+                requests = (
+                    (
+                        team,
+                        race,
+                        session,
+                        driver_a_raw,
+                        lap_a,
+                        label_a,
+                    ),
+                )
+
+                lap_by_label[label_a] = lap_a
+                team_by_label[label_a] = team
+
+            else:
+
+                driver_a_raw = performance_drivers[0]
+                driver_b_raw = performance_drivers[1]
+
+                common_lap = _resolve_common_lap(
+                    team,
+                    race,
+                    session,
+                    driver_a_raw,
+                    driver_b_raw,
+                    selected_lap,
+                )
+
+                if common_lap is None:
+                    st.warning(
+                        "No common telemetry lap was found for "
+                        "the selected drivers."
+                    )
+                    return
+
+                label_a = performance_driver_label(
+                    team,
+                    driver_a_raw,
+                    prefix_team=False,
+                )
+
+                label_b = performance_driver_label(
+                    team,
+                    driver_b_raw,
+                    prefix_team=False,
+                )
+
+                requests = (
+                    (
+                        team,
+                        race,
+                        session,
+                        driver_a_raw,
+                        common_lap,
+                        label_a,
+                    ),
+                    (
+                        team,
+                        race,
+                        session,
+                        driver_b_raw,
+                        common_lap,
+                        label_b,
+                    ),
+                )
+
+                lap_by_label[label_a] = common_lap
+                lap_by_label[label_b] = common_lap
+
+                team_by_label[label_a] = team
+                team_by_label[label_b] = team
+
+            st.markdown(
+                f"**Data:** "
+                f"{TEAM_CONFIG[team]['name']} · "
+                f"{race} · {session_label}"
+            )
+
+    # ==============================================================
+    # Load raw telemetry
+    # ==============================================================
+
+    try:
+
+        frames_by_driver = load_performance_frames(
+            tuple(requests)
+        )
+
+    except Exception as exc:
+
+        st.error(
+            f"Could not load performance telemetry: {exc}"
+        )
+        return
+
+    frames_by_driver = {
+        driver: frames
+        for driver, frames in frames_by_driver.items()
+        if frames
+    }
+
+    if not frames_by_driver:
+
+        st.warning(
+            "No raw telemetry frames were available "
+            "for the selected performance comparison."
+        )
+        return
+
+    # Make sure lap metadata only describes streams that actually loaded.
+    lap_by_label = {
+        label: lap
+        for label, lap in lap_by_label.items()
+        if label in frames_by_driver
+    }
+
+    if not lap_by_label:
+        st.warning(
+            "Performance telemetry loaded without valid lap metadata."
+        )
+        return
+
+    lap_analyzer = LapAnalyzer()
+    sector_analyzer = SectorAnalyzer(
+        num_sectors=3
+    )
+    corner_analyzer = CornerAnalyzer()
+    driver_comparison = DriverComparison()
+
+    # ==============================================================
+    # Lap analysis
+    # ==============================================================
+
+    st.markdown(
+        "#### 📈 Lap Analysis"
+    )
+
+    lap_frames = [
+        frame
+        for frames in frames_by_driver.values()
+        for frame in frames
+    ]
+
+    lap_df = lap_analyzer.analyze(
+        lap_frames
+    )
+
+    if not lap_df.empty:
+
+        display_cols = [
+            'driver',
+            'lap',
+            'n_frames',
+            'observed_span_s',
+            'distance_covered_m',
+            'top_speed_kph',
+            'avg_speed_kph',
+            'avg_throttle_pct',
+            'full_throttle_pct',
+            'braking_pct',
+            'gear_shift_count',
+        ]
+
+        display_cols = [
+            c
+            for c in display_cols
+            if c in lap_df.columns
+        ]
+
+        st.dataframe(
+            lap_df[display_cols].round(3),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        metric_cols = st.columns(
+            min(
+                4,
+                max(
+                    1,
+                    len(lap_df),
+                ),
+            )
+        )
+
+        for idx, (_, row) in enumerate(
+            lap_df.iterrows()
+        ):
+
+            if idx >= len(metric_cols):
+                break
+
+            with metric_cols[idx]:
+
+                st.metric(
+                    f"{row['driver']} · Avg speed",
+                    f"{row['avg_speed_kph']:.1f} km/h",
+                    help=(
+                        f"Top speed: "
+                        f"{row['top_speed_kph']:.0f} km/h · "
+                        f"Distance: "
+                        f"{row['distance_covered_m']:.1f} m"
+                    ),
+                )
+
+    else:
+
+        st.info(
+            "No lap metrics available."
+        )
+
+    # ==============================================================
+    # Sector analysis
+    # ==============================================================
+
+    st.markdown(
+        "#### 🟦 Sector Analysis"
+    )
+
+    sector_df = sector_analyzer.analyze(
+        lap_frames
+    )
+
+    if not sector_df.empty:
+
+        sector_cols = [
+            'driver',
+            'lap',
+            'sector',
+            'n_frames',
+            'distance_start_m',
+            'distance_end_m',
+            'observed_span_s',
+            'top_speed_kph',
+            'avg_speed_kph',
+            'avg_throttle_pct',
+            'braking_pct',
+        ]
+
+        sector_cols = [
+            c
+            for c in sector_cols
+            if c in sector_df.columns
+        ]
+
+        st.dataframe(
+            sector_df[sector_cols].round(3),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    else:
+
+        st.info(
+            "No sector metrics available."
+        )
+
+    # ==============================================================
+    # Driver comparison
+    # ==============================================================
+
+    comparison_drivers = list(
+        frames_by_driver.keys()
+    )
+
+    if len(comparison_drivers) >= 2:
+
+        comparison_driver_a = (
+            comparison_drivers[0]
+        )
+
+        comparison_driver_b = (
+            comparison_drivers[1]
+        )
+
+        comparison_frames = (
+            frames_by_driver[
+                comparison_driver_a
+            ]
+            +
+            frames_by_driver[
+                comparison_driver_b
+            ]
+        )
+
+        if comparison_type == "Team vs Team":
+
+            comparison_title = (
+                f"#### ⚖️ Driver Comparison — "
+                f"{TEAM_CONFIG[team]['name']} "
+                f"{comparison_driver_a} "
+                f"vs "
+                f"{TEAM_CONFIG[team_b]['name']} "
+                f"{comparison_driver_b}"
+            )
+
+        else:
+
+            comparison_title = (
+                f"#### ⚖️ Driver Comparison — "
+                f"{comparison_driver_a} "
+                f"vs "
+                f"{comparison_driver_b}"
+            )
+
+        st.markdown(
+            comparison_title
+        )
+
+        lap_a = lap_by_label[
+            comparison_driver_a
+        ]
+
+        lap_b = lap_by_label[
+            comparison_driver_b
+        ]
+
+        try:
+
+            comparison = (
+                driver_comparison.compare_laps(
+                    comparison_frames,
+                    driver_a=comparison_driver_a,
+                    driver_b=comparison_driver_b,
+                    lap_a=lap_a,
+                    lap_b=lap_b,
+                )
+            )
+
+            comparison_rows = []
+
+            for metric in [
+                'n_frames',
+                'observed_span_s',
+                'distance_covered_m',
+                'top_speed_kph',
+                'avg_speed_kph',
+                'speed_std_kph',
+                'avg_throttle_pct',
+                'full_throttle_pct',
+                'braking_pct',
+                'gear_shift_count',
+            ]:
+
+                if metric in comparison['metrics_a']:
+
+                    comparison_rows.append(
+                        {
+                            'metric': metric,
+
+                            comparison_driver_a:
+                                comparison[
+                                    'metrics_a'
+                                ][metric],
+
+                            comparison_driver_b:
+                                comparison[
+                                    'metrics_b'
+                                ][metric],
+
+                            (
+                                f'{comparison_driver_a} - '
+                                f'{comparison_driver_b}'
+                            ):
+                                comparison[
+                                    'delta_a_minus_b'
+                                ][metric],
+                        }
+                    )
+
+            if comparison_rows:
+
+                st.dataframe(
+                    pd.DataFrame(
+                        comparison_rows
+                    ).round(3),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+            speed_df = (
+                driver_comparison.compare_speed_traces(
+                    comparison_frames,
+                    driver_a=comparison_driver_a,
+                    driver_b=comparison_driver_b,
+                    lap_a=lap_a,
+                    lap_b=lap_b,
+                )
+            )
+
+            if not speed_df.empty:
+
+                fig_speed = go.Figure()
+
+                fig_speed.add_trace(
+                    go.Scatter(
+                        x=speed_df['distance_m'],
+                        y=speed_df[
+                            f'speed_{comparison_driver_a}_kph'
+                        ],
+                        name=(
+                            f"{TEAM_CONFIG[team]['name']} · "
+                            f"{comparison_driver_a}"
+                            if comparison_type
+                            == "Team vs Team"
+                            else comparison_driver_a
+                        ),
+                        line=dict(
+                            width=2
+                        ),
+                    )
+                )
+
+                fig_speed.add_trace(
+                    go.Scatter(
+                        x=speed_df['distance_m'],
+                        y=speed_df[
+                            f'speed_{comparison_driver_b}_kph'
+                        ],
+                        name=(
+                            f"{TEAM_CONFIG[team_b]['name']} · "
+                            f"{comparison_driver_b}"
+                            if comparison_type
+                            == "Team vs Team"
+                            else comparison_driver_b
+                        ),
+                        line=dict(
+                            width=2
+                        ),
+                    )
+                )
+
+                fig_speed.update_layout(
+                    height=300,
+                    margin=dict(
+                        l=10,
+                        r=10,
+                        t=35,
+                        b=10,
+                    ),
+                    plot_bgcolor='#0a0a0a',
+                    paper_bgcolor='#0a0a0a',
+                    font=dict(
+                        color='#ffffff'
+                    ),
+                    title='Speed vs Distance',
+                    xaxis=dict(
+                        title='Distance (m)',
+                        gridcolor='#222',
+                    ),
+                    yaxis=dict(
+                        title='Speed (km/h)',
+                        gridcolor='#222',
+                    ),
+                    legend=dict(
+                        orientation='h'
+                    ),
+                )
+
+                st.plotly_chart(
+                    fig_speed,
+                    use_container_width=True,
+                    key=(
+                        f"performance_speed_"
+                        f"{team}_"
+                        f"{team_b or 'same'}_"
+                        f"{comparison_driver_a}_"
+                        f"{comparison_driver_b}_"
+                        f"{race}_"
+                        f"{session}_"
+                        f"{lap_a}_"
+                        f"{lap_b}"
+                    ),
+                )
+
+                st.caption(
+                    f"Mean distance-aligned speed delta "
+                    f"({comparison_driver_a} − "
+                    f"{comparison_driver_b}): "
+                    f"{speed_df['speed_delta_kph'].mean():.2f} km/h"
+                )
+
+            else:
+
+                st.warning(
+                    "Speed comparison returned no aligned "
+                    "samples for the selected driver/lap pair."
+                )
+
+        except Exception as exc:
+
+            st.warning(
+                f"Driver comparison unavailable: {exc}"
+            )
+
+    # ==============================================================
+    # Corner analysis
+    # ==============================================================
+
+    st.markdown(
+        "#### 🏁 Corner Analysis"
+    )
+
+    corner_df = corner_analyzer.analyze(
+        lap_frames
+    )
+
+    if not corner_df.empty:
+
+        corner_cols = [
+            'driver',
+            'lap',
+            'corner_number',
+            'entry_distance_m',
+            'apex_distance_m',
+            'exit_distance_m',
+            'entry_speed_kph',
+            'apex_speed_kph',
+            'exit_speed_kph',
+            'speed_prominence_kph',
+            'braked_before_apex',
+            'gear_at_apex',
+        ]
+
+        corner_cols = [
+            c
+            for c in corner_cols
+            if c in corner_df.columns
+        ]
+
+        st.dataframe(
+            corner_df[corner_cols].round(3),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.caption(
+            "Corner windows are algorithmically detected from the "
+            "telemetry stream; they are not manually calibrated "
+            "circuit corner definitions."
+        )
+
+    else:
+
+        st.info(
+            "No corners were detected in the selected telemetry."
+        )
+
+
 # ── Main content ──────────────────────────────────────────────────
 if not st.session_state.running:
 
@@ -1555,12 +2690,18 @@ if not st.session_state.running:
         "then click **▶ Start** to begin the simulation."
     )
 
-    st.markdown("### How it works")
+    st.markdown(
+        "### How it works"
+    )
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.markdown("#### 🚗 Car Node")
+
+        st.markdown(
+            "#### 🚗 Car Node"
+        )
+
         st.markdown(
             "Streams real F1 telemetry from FastF1. "
             "Signs each packet with Ed25519. "
@@ -1568,7 +2709,11 @@ if not st.session_state.running:
         )
 
     with col2:
-        st.markdown("#### 📡 Relay Node")
+
+        st.markdown(
+            "#### 📡 Relay Node"
+        )
+
         st.markdown(
             "Decrypts, checks integrity and anomalies, "
             "re-encrypts for the validator leg. "
@@ -1576,7 +2721,11 @@ if not st.session_state.running:
         )
 
     with col3:
-        st.markdown("#### 🏁 FIA Validator")
+
+        st.markdown(
+            "#### 🏁 FIA Validator"
+        )
+
         st.markdown(
             "Verifies Ed25519 signature, sequence, "
             "and ZKP commitment. "
@@ -1628,7 +2777,6 @@ if not st.session_state.running:
                         f"🏎️ **{team_label}**"
                     )
 
-                    # Show comparison type when available.
                     if run.get(
                         'comparison_type'
                     ):
@@ -1822,8 +2970,6 @@ else:
 
             st.session_state.packets_processed += 1
 
-        # Process the second pipeline for either:
-        # Team vs Team OR Driver vs Driver.
         if compare_mode:
 
             if (
@@ -1933,15 +3079,17 @@ else:
 
             col_a, col_b = st.columns(2)
 
-            # ── A ────────────────────────────────────────────────
             with col_a:
 
                 if comparison_type == "Driver vs Driver":
+
                     label_a = (
                         f"{TEAM_CONFIG[team]['name']} "
                         f"— {driver_arg}"
                     )
+
                 else:
+
                     label_a = (
                         TEAM_CONFIG[team]['name']
                     )
@@ -1952,7 +3100,6 @@ else:
                     label_a,
                 )
 
-            # ── B ────────────────────────────────────────────────
             with col_b:
 
                 if comparison_type == "Driver vs Driver":
@@ -2256,6 +3403,38 @@ else:
 
     st.divider()
 
+    # ── Performance Analysis ──────────────────────────────────────
+    render_performance_analysis(
+        team=team,
+        race=race,
+        session=session,
+        available_drivers=available_drivers,
+        available_laps=available_laps,
+        selected_driver=selected_driver,
+        selected_lap=selected_lap,
+        driver_b=(
+            driver_b_arg
+            if compare_mode
+            and comparison_type in (
+                "Driver vs Driver",
+                "Team vs Team",
+            )
+            else None
+        ),
+        team_b=(
+            team_b
+            if compare_mode
+            and comparison_type == "Team vs Team"
+            else None
+        ),
+        selected_lap_b=selected_lap_b,
+        comparison_type=(
+            comparison_type
+            if compare_mode
+            else None
+        ),
+    )
+
     # ── Save prompt ───────────────────────────────────────────────
     st.markdown(
         "#### 💾 Save This Run?"
@@ -2283,6 +3462,7 @@ else:
     with label_col:
 
         if comparison_type == "Driver vs Driver":
+
             default_placeholder = (
                 f"{driver_arg or 'Driver A'} "
                 f"vs {driver_b_arg or 'Driver B'} "
@@ -2293,6 +3473,7 @@ else:
             comparison_type == "Team vs Team"
             and team_b
         ):
+
             default_placeholder = (
                 f"{TEAM_CONFIG[team]['name']} "
                 f"vs "
@@ -2301,6 +3482,7 @@ else:
             )
 
         else:
+
             default_placeholder = (
                 f"e.g. "
                 f"{driver_arg or 'All'} "
