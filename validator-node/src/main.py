@@ -18,7 +18,7 @@ CFG_PATH = os.path.join(
 )
 
 sys.path.insert(0, SRC_DIR)
-sys.path.insert(0, os.path.join(ROOT, 'car-producer', 'src'))
+sys.path.insert(0, os.path.join(ROOT, 'car_producer', 'src'))
 sys.path.insert(0, os.path.join(ROOT, 'relay-node',   'src'))
 os.makedirs(LOGS_DIR, exist_ok=True)
 

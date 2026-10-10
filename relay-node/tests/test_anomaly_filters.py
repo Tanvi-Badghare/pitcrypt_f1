@@ -8,7 +8,7 @@ ROOT    = os.path.abspath(
     os.path.join(os.path.dirname(__file__), '..', '..')
 )
 SRC     = os.path.join(ROOT, 'relay-node',   'src')
-CAR_SRC = os.path.join(ROOT, 'car-producer', 'src')
+CAR_SRC = os.path.join(ROOT, 'car_producer', 'src')
 
 sys.path.insert(0, SRC)
 sys.path.insert(0, CAR_SRC)

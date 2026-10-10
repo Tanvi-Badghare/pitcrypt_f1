@@ -19,7 +19,7 @@ CFG_PATH = os.path.join(
 )
 
 sys.path.insert(0, SRC_DIR)
-sys.path.insert(0, os.path.join(ROOT, 'car-producer', 'src'))
+sys.path.insert(0, os.path.join(ROOT, 'car_producer', 'src'))
 os.makedirs(LOGS_DIR, exist_ok=True)
 
 from crypto_engine     import CryptoEngine
@@ -357,7 +357,7 @@ class RelayNode:
         Generates packets internally without network.
         """
         sys.path.insert(
-            0, os.path.join(ROOT, 'car-producer', 'src')
+            0, os.path.join(ROOT, 'car_producer', 'src')
         )
         from sensor_simulator import SensorSimulator
         from packet_builder   import PacketBuilder

@@ -1,7 +1,7 @@
 {
   "include": [
-    "car-producer/src",
-    "car-producer/tests",
+    "car_producer/src",
+    "car_producer/tests",
     "relay-node/src",
     "relay-node/tests",
     "validator-node/src",
@@ -14,7 +14,7 @@
     "dashboard"
   ],
   "extraPaths": [
-    "car-producer/src",
+    "car_producer/src",
     "relay-node/src",
     "relay-node/tests",
     "validator-node/src",

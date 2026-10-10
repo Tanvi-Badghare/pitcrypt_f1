@@ -15,7 +15,7 @@ logging.basicConfig(
 ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), '..', '..')
 )
-sys.path.insert(0, os.path.join(ROOT, 'car-producer', 'src'))
+sys.path.insert(0, os.path.join(ROOT, 'car_producer', 'src'))
 
 from packet_builder import (
     MAGIC,
@@ -211,7 +211,7 @@ class PacketParser:
         over the network from the car producer.
 
         This is the transmission format used by
-        car-producer/src/main.py _send_packet().
+        car_producer/src/main.py _send_packet().
 
         Args:
             json_bytes: JSON-encoded packet bytes
@@ -302,7 +302,7 @@ class PacketParser:
 # ── Self Test ────────────────────────────────────────────────────
 if __name__ == '__main__':
     sys.path.insert(
-        0, os.path.join(ROOT, 'car-producer', 'src')
+        0, os.path.join(ROOT, 'car_producer', 'src')
     )
     from sensor_simulator import SensorSimulator
     from packet_builder   import PacketBuilder
