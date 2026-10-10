@@ -19,7 +19,7 @@ from performance.corner_analysis import CornerAnalyzer
 ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), '..')
 )
-CAR_SRC = os.path.join(ROOT, 'car-producer', 'src')
+CAR_SRC = os.path.join(ROOT, 'car_producer', 'src')
 REL_SRC = os.path.join(ROOT, 'relay-node', 'src')
 VAL_SRC = os.path.join(ROOT, 'validator-node', 'src')
 IAM_SRC = os.path.join(ROOT, 'iam-module', 'src')
