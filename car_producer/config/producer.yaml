@@ -1,0 +1,39 @@
+# PitCrypt-F1 — Car Producer Node Configuration
+# Mercedes AMG Petronas / Red Bull Racing
+
+node:
+  id: "mercedes_car"           # Change to "redbull_car" for Red Bull
+  team: "mercedes"             # "mercedes" or "redbull"
+  session: "R"                 # R=Race, Q=Qualifying, S=Sprint
+  race: "Bahrain"              # Race name or "random"
+
+telemetry:
+  race: "Bahrain"              # Race to stream from
+  session: "R"                 # Session type
+  add_noise: true              # Add sensor variance
+  inject_anomalies: false      # Inject test anomalies
+  anomaly_rate: 0.001          # Fraction of anomalous frames
+  stream_delay_ms: 10          # Delay between packets (ms)
+                               # 10ms = ~100Hz (real F1 rate)
+
+crypto:
+  max_session_age_seconds: 300  # Rotate key every 5 minutes
+  max_packets_per_key: 10000    # Rotate key every 10,000 packets
+  check_interval_seconds: 5     # Key rotation check frequency
+
+network:
+  relay_host: "127.0.0.1"      # Relay node host
+  relay_port: 9001             # Relay node port
+  protocol: "tcp"              # tcp or udp
+  timeout_seconds: 5           # Connection timeout
+  max_retries: 3               # Reconnection attempts
+
+logging:
+  level: "INFO"                # DEBUG, INFO, WARNING, ERROR
+  log_to_file: true
+  log_file: "logs/car_producer.log"
+
+pipeline:
+  enabled: true
+  max_queue_size: 1000         # Max packets in send queue
+  batch_size: 1                # Packets per send call
