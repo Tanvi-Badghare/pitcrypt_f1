@@ -65,7 +65,7 @@ class PacketResult:
 
 
 class PitCryptPipeline:
-    """One car-producer/relay-node/FIA-validator pipeline instance.
+    """One car_producer/relay-node/FIA-validator pipeline instance.
 
     A single instance holds the long-lived key material (car's Ed25519
     signing keypair, car<->relay and relay<->validator AES-256-GCM
