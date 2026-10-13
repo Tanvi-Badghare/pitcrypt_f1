@@ -1,9 +1,9 @@
 {
   "simulation": "replay_attack",
-  "timestamp": "2026-09-16T14:34:42.508833+00:00",
+  "timestamp": "2026-10-13T12:38:31.445256+00:00",
   "total": 5,
-  "detected": 4,
-  "elapsed_s": 0.07,
+  "detected": 5,
+  "elapsed_s": 0.04,
   "results": [
     {
       "attack": "simple_replay",
@@ -31,11 +31,10 @@
     },
     {
       "attack": "sequence_increment",
-      "detected": false,
+      "detected": true,
+      "signature_failed": true,
       "stages": {
-        "signature": "PASS",
-        "sequence": "PASS",
-        "zkp": "PASS"
+        "signature": "FAIL: Invalid Ed25519 signature from node 'mercedes_car'. Packet may have been tampered with."
       }
     }
   ]

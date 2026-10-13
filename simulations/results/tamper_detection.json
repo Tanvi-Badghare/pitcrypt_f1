@@ -1,9 +1,9 @@
 {
   "simulation": "tampering_attack",
-  "timestamp": "2026-09-16T14:34:04.906285+00:00",
+  "timestamp": "2026-10-12T12:59:19.943339+00:00",
   "total": 7,
   "detected": 7,
-  "elapsed_s": 0.03,
+  "elapsed_s": 0.02,
   "results": [
     {
       "attack": "payload_bit_flip",
