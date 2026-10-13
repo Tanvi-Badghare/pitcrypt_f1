@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 # ── Path setup ───────────────────────────────────────────────────
 ROOT    = os.path.abspath(os.path.dirname(__file__) + '/..')
-CAR_SRC = os.path.join(ROOT, 'car-producer',  'src')
+CAR_SRC = os.path.join(ROOT, 'car_producer',  'src')
 REL_SRC = os.path.join(ROOT, 'relay-node',    'src')
 VAL_SRC = os.path.join(ROOT, 'validator-node', 'src')
 
@@ -374,30 +374,58 @@ def sim_5_sequence_increment_attack(p: dict) -> dict:
     process_at_validator(p, val_pkt)
 
     # Try to fool validator by incrementing sequence
-    # but this requires modifying the header which
-    # breaks the Ed25519 signature
+    
+    # Tamper with the sequence number in the actual signed header.
     fake_pkt = dict(val_pkt)
-    fake_pkt['sequence_no'] = val_pkt['sequence_no'] + 1000
+    new_seq = val_pkt['sequence_no'] + 1000
 
-    # Header bytes still contain original sequence
-    # Signature covers original header — will fail
+    original_header = val_pkt['header']
+    sequence_offset = 8  # !IBBBB: 4-byte magic + four 1-byte fields
 
+    if len(original_header) < sequence_offset + 8:
+        raise ValueError("Packet header is too short to contain sequence number")
+
+    tampered_header = bytearray(original_header)
+    tampered_header[sequence_offset:sequence_offset + 8] = (
+        new_seq.to_bytes(8, byteorder='big')
+    )
+
+    fake_pkt['header'] = bytes(tampered_header)
+    fake_pkt['sequence_no'] = new_seq
+
+    # Keep the original signature: it must no longer authenticate
+    # the modified header + original payload.
     val_result = process_at_validator(p, fake_pkt)
-    # Note: sequence check uses dict field, not header bytes
-    # so this tests the sequence dict manipulation
-    detected   = not val_result['passed']
 
-    print(f"  Stage failures: {val_result.get('stages', {})}")
+    stages = val_result.get('stages', {})
+    signature_status = stages.get('signature')
+
+    print(f"  Original sequence: {val_pkt['sequence_no']}")
+    print(f"  Tampered sequence: {new_seq}")
+    print(f"  Stage results: {stages}")
+
+    detected = not val_result.get('passed', False)
+
+    # Do not count a sequence-check failure alone as proof that
+    # signature-based header-tampering detection works.
+    signature_failed = (
+        signature_status is not None
+        and 'FAIL' in str(signature_status).upper()
+    )
+
     print(
         f"  Result: "
-        f"{'✅ DETECTED' if detected else '⚠️  Passed (seq dict overridden)'}"
+        f"{'✅ SIGNATURE TAMPERING DETECTED' if signature_failed else '❌ EXPECTED SIGNATURE FAILURE NOT CONFIRMED'}"
     )
 
     return {
-        'attack':   'sequence_increment',
+        'attack': 'sequence_increment',
         'detected': detected,
-        'stages':   val_result.get('stages', {}),
+        'signature_failed': signature_failed,
+        'stages': stages,
     }
+
+
 
 
 # ── Main ──────────────────────────────────────────────────────────

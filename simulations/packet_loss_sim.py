@@ -88,7 +88,7 @@ ROOT = os.path.abspath(
 )
 
 for source_dir in [
-    os.path.join(ROOT, "car-producer", "src"),
+    os.path.join(ROOT, "car_producer", "src"),
     os.path.join(ROOT, "relay-node", "src"),
     os.path.join(ROOT, "validator-node", "src"),
 ]:

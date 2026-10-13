@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 # ── Path setup ───────────────────────────────────────────────────
 ROOT    = os.path.abspath(os.path.dirname(__file__) + '/..')
-CAR_SRC = os.path.join(ROOT, 'car-producer',  'src')
+CAR_SRC = os.path.join(ROOT, 'car_producer',  'src')
 REL_SRC = os.path.join(ROOT, 'relay-node',    'src')
 VAL_SRC = os.path.join(ROOT, 'validator-node', 'src')
 
