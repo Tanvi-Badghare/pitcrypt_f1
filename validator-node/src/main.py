@@ -8,6 +8,7 @@ import queue
 import yaml
 from typing import Optional
 from datetime import datetime, timezone
+from packet_builder import PacketBuilder
 
 # ── Path setup ───────────────────────────────────────────────────
 SRC_DIR  = os.path.dirname(os.path.abspath(__file__))
@@ -327,6 +328,33 @@ class ValidatorNode:
             self._reject(
                 packet,
                 'signature_invalid',
+                {'error': str(e)},
+            )
+            return None
+
+        
+        # Verify that metadata agrees with the authenticated header.
+        try:
+            header = packet.get('header')
+            header_fields = PacketBuilder.parse_header(header)
+            header_sequence = header_fields['sequence_no']
+            metadata_sequence = packet.get('sequence_no')
+
+            if metadata_sequence != header_sequence:
+                self._reject(
+                    packet,
+                    'header_metadata_mismatch',
+                    {
+                        'header_sequence_no': header_sequence,
+                        'metadata_sequence_no': metadata_sequence,
+                    },
+                )
+                return None
+
+        except (TypeError, ValueError, KeyError) as e:
+            self._reject(
+                packet,
+                'invalid_packet_header',
                 {'error': str(e)},
             )
             return None
