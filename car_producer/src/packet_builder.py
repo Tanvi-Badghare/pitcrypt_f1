@@ -142,7 +142,8 @@ class PacketBuilder:
             'size':        len(raw),
         }
 
-    def parse_header(self, raw_bytes: bytes) -> dict:
+    @staticmethod
+    def parse_header(raw_bytes: bytes) -> dict:
         if len(raw_bytes) < HEADER_SIZE:
             raise ValueError(
                 f"Packet too short: {len(raw_bytes)} bytes. "
