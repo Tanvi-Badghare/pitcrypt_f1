@@ -547,9 +547,9 @@ def sim_time_jitter(
         packet = item["packet"]
 
         sequence = packet.get(
-            "sequence",
-            packet.get("sequence_number"),
-        )
+            "sequence_no",
+            packet.get("sequence", packet.get("sequence_number")),
+            )
 
         if (
             last_sequence is not None
