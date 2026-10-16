@@ -1,0 +1,67 @@
+{
+  "benchmark": "benchmark_throughput",
+  "scenario": "single_and_multi_car",
+  "parameters": {
+    "duration": 5.0,
+    "cars": 1,
+    "circuit": "Silverstone Circuit",
+    "synthetic": false,
+    "data_source": "cached FastF1 + synthetic fallback"
+  },
+  "results": {
+    "single_car": {
+      "cars": 1,
+      "duration_s": 5.00035829981789,
+      "packets_generated": 6348,
+      "packets_accepted": 6348,
+      "packets_rejected": 0,
+      "packets_per_sec": 1269.509027029361,
+      "packets_per_sec_per_car": 1269.509027029361,
+      "failure_stages": {},
+      "cpu_time_s": 4.984375,
+      "peak_rss_mb": 277.25390625,
+      "per_car": [
+        {
+          "car_id": "RBR-01",
+          "generated": 6348,
+          "accepted": 6348,
+          "rejected": 0,
+          "duration_s": 5.00035829981789,
+          "packets_per_sec": 1269.509027029361,
+          "failure_stages": {},
+          "cpu_time_s": 4.984375,
+          "peak_rss_mb": 277.25390625
+        }
+      ]
+    },
+    "multi_car": {
+      "cars": 1,
+      "wall_duration_s": 18.267911299830303,
+      "packets_generated": 6316,
+      "packets_accepted": 6316,
+      "packets_rejected": 0,
+      "packets_per_sec": 1263.2,
+      "packets_per_sec_per_car": 1263.2,
+      "failure_stages": {},
+      "logical_cpus": 16,
+      "aggregate_cpu_time_s": 4.96875,
+      "aggregate_cpu_utilization_pct": 1.699958303404313,
+      "max_worker_rss_mb": 268.9765625,
+      "sum_worker_rss_mb": 268.9765625,
+      "per_car": [
+        {
+          "car_id": "RBR-01",
+          "generated": 6316,
+          "accepted": 6316,
+          "rejected": 0,
+          "duration_s": 5.000404700171202,
+          "packets_per_sec": 1263.097764823666,
+          "failure_stages": {},
+          "cpu_time_s": 4.96875,
+          "peak_rss_mb": 268.9765625
+        }
+      ]
+    }
+  },
+  "timestamp_unix": 1790687273.9545474
+}
