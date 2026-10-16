@@ -1,0 +1,68 @@
+{
+  "simulation": "key_rotation",
+  "timestamp": "2026-10-15T07:23:22Z",
+  "results": {
+    "manual_rotation": {
+      "scenario": "manual_rotation",
+      "initial_public_key_bytes": 32,
+      "initial_public_key_prefix": "77270f84e07e02d7",
+      "before": {
+        "node_id": "mercedes_car_rotation_test",
+        "running": false,
+        "session_age_s": 0.0,
+        "packet_count": 20,
+        "rotation_count": 0,
+        "time_until_rotation": 9999.0,
+        "packets_until_rotation": 99979
+      },
+      "after": {
+        "node_id": "mercedes_car_rotation_test",
+        "running": false,
+        "session_age_s": 0.0,
+        "packet_count": 0,
+        "rotation_count": 1,
+        "time_until_rotation": 9999.0,
+        "packets_until_rotation": 99999
+      },
+      "callback_count": 1,
+      "callback_events": [
+        {
+          "rotation_num": 1,
+          "reason": "manual_force",
+          "old_age_s": 0.0,
+          "old_count": 20,
+          "timestamp": "2026-10-15T07:23:22.958330+00:00",
+          "new_public_key_bytes": 32,
+          "new_public_key_prefix": "d9bb529a464f653f"
+        }
+      ],
+      "rotation_elapsed_ms": 1.91,
+      "rotation_triggered": true,
+      "packet_counter_reset": true,
+      "rotation_log_entries": 1
+    },
+    "packet_count_rotation": {
+      "scenario": "packet_count_rotation",
+      "configured_max_packets": 10,
+      "packets_recorded_before_rotation": 10,
+      "rotation_count": 1,
+      "callback_count": 1,
+      "callback_events": [
+        {
+          "rotation_num": 1,
+          "reason": "count_exceeded (10 >= 10)",
+          "old_age_s": 0.01,
+          "old_count": 10,
+          "timestamp": "2026-10-15T07:23:22.976987+00:00",
+          "new_public_key_bytes": 32,
+          "new_public_key_prefix": "5977c8d0c104ccf0"
+        }
+      ],
+      "rotation_wait_ms": 11.506,
+      "rotation_triggered": true,
+      "packet_counter_after_rotation": 0,
+      "counter_reset": true
+    }
+  },
+  "elapsed_s": 0.071
+}

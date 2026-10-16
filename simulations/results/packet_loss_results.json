@@ -6,7 +6,7 @@
     "race": "Bahrain",
     "session": "R",
     "random_seed": 42,
-    "generated_at": "2026-09-24T13:32:34Z"
+    "generated_at": "2026-10-15T07:03:59Z"
   },
   "scenarios": {
     "random_loss": [
@@ -176,7 +176,7 @@
         "transmitted": 50,
         "accepted": 50
       },
-      "recovery_time_ms": 0.8213999681174755,
+      "recovery_time_ms": 1.3947999104857445,
       "recovery_successful": true,
       "sequence_gaps_detected": 0
     },
@@ -194,9 +194,25 @@
       "commitment_failures": 0,
       "packet_count": 1000,
       "configured_loss_rate": 0.05,
-      "elapsed_seconds": 0.6857844999758527,
-      "processing_rate_packets_per_second": 1458.1840214166568,
-      "transmitted_rate_packets_per_second": 1399.8566605599906
+      "elapsed_seconds": 1.0399228995665908,
+      "processing_rate_packets_per_second": 961.6097505082065,
+      "transmitted_rate_packets_per_second": 923.1453604878782
+    },
+    "duplicate_packets": {
+      "scenario": "duplicate_packets",
+      "packet_count": 100,
+      "duplicate_count": 10,
+      "generated": 100,
+      "original_transmitted": 100,
+      "duplicate_transmitted": 10,
+      "original_accepted": 100,
+      "original_rejected": 0,
+      "duplicates_accepted": 0,
+      "duplicates_rejected": 10,
+      "replay_detections": 10,
+      "sequence_gaps_detected": 0,
+      "duplicate_rejection_rate": 1.0,
+      "replay_protection_successful": true
     }
   }
 }
