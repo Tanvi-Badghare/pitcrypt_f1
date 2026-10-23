@@ -1,218 +1,321 @@
-<div align="center">
+ <div align="center">
 
 <img src="dashboard/assets/logo.png" alt="PitCrypt-F1 Logo" width="180"/>
 
 # PitCrypt-F1
 
-### Zero-Trust Cryptographic Security Framework
-### for FIA-Regulated Formula 1 Telemetry Streams
+### Zero-Trust Security Framework for Formula 1 Telemetry Streams
 
-[![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)](https://python.org)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python)](https://python.org)
 [![Rust](https://img.shields.io/badge/Rust-ZKP_Module-orange?logo=rust)](https://rust-lang.org)
-[![Tests](https://img.shields.io/badge/Tests-255_passing-success?logo=pytest)](/)
+[![Tests](https://img.shields.io/badge/Tests-422_passing-success?logo=pytest)](#test-coverage)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-Active_Development-blue)](/)
-Car Node  ──[X25519 ECDH]──►  Relay Node  ──[X25519 ECDH]──►  FIA Validator
-Ed25519 Sign                  Decrypt                          Verify Ed25519
-ChaCha20 Encrypt              Anomaly Filter                   Sequence Check
-ZKP Commit                    Re-encrypt                       ZKP Verify
-Audit Log
+[![Status](https://img.shields.io/badge/Status-Active_Development-blue)](#project-status)
+
+**Car Producer → Relay Node → FIA Validator → Audit Trail**
+
+A telemetry security prototype combining cryptographic authentication, authenticated encryption, replay protection, anomaly detection, access control, and telemetry analysis using real F1-derived data.
+
 </div>
 
 ---
 
-## What Is This
+## What Is PitCrypt-F1?
 
-PitCrypt-F1 is a zero-trust cryptographic security framework that protects
-Formula 1 telemetry data transmitted from car nodes to the FIA validator.
-It implements a three-tier pipeline — car producer, relay node, FIA validator —
-using RFC-standardised cryptographic primitives and real 2025 F1 telemetry
-data sourced via the FastF1 API across five constructors and thirteen circuits.
+PitCrypt-F1 is a zero-trust security framework prototype for protecting Formula 1 telemetry as it moves from a simulated car-side producer through a relay node to a validator.
 
-Every packet is signed, encrypted, anomaly-checked, re-encrypted,
-signature-verified, sequence-checked, and commitment-verified before
-the FIA validator accepts it. The entire decision chain is logged to
-an immutable audit trail. A live Streamlit dashboard visualises the
-pipeline in real time, including driver-level telemetry, track position,
-and adversarial attack injection for demonstration purposes.
+The project combines three engineering concerns:
 
+- **Telemetry engineering:** ingesting, filtering, packetizing, and analysing time-series telemetry.
+- **Cybersecurity:** protecting packet confidentiality and integrity, authenticating producers, detecting replay attempts, and enforcing node access policies.
+- **Observability:** recording validation decisions and presenting telemetry and security events in a Streamlit dashboard.
+
+The telemetry dataset is derived from the FastF1 API and includes data from five constructors across thirteen circuits. The framework uses a three-stage processing pipeline:
+
+1. The car producer builds and signs telemetry packets, then encrypts them for the relay.
+2. The relay decrypts and inspects packets, performs integrity and anomaly checks, and re-encrypts accepted traffic for the validator.
+3. The validator decrypts the forwarded packet, checks the producer signature and sequence metadata, verifies the configured commitment, and records its decision.
+
+The repository includes Python tests, attack simulations, security documentation, a Rust zero-knowledge-proof module, and tools for telemetry analysis.
+
+> **Scope:** PitCrypt-F1 is a research and portfolio prototype. It is not an FIA-certified system or a production-deployed Formula 1 telemetry security solution.
 
 ---
 
 ## Security Architecture
 
-### Cryptographic Stack
+### Cryptographic stack
 
-| Purpose | Primitive | Standard |
+| Purpose | Primitive | Standard / reference |
 |---|---|---|
-| Key exchange | X25519 ECDH | RFC 7748 |
+| Session key agreement | X25519 ECDH | RFC 7748 |
 | Key derivation | HKDF-SHA256 | RFC 5869 |
-| Encryption | ChaCha20-Poly1305 AEAD | RFC 8439 |
-| Authentication | Ed25519 | RFC 8032 |
-| Integrity | SHA-256 | FIPS 180-4 |
-| ZKP commitment | Pedersen / Hash | ADR-002 |
-| ZKP range proofs | Bulletproofs | Bünz et al. 2018 |
+| Authenticated encryption | ChaCha20-Poly1305 | RFC 8439 |
+| Digital signatures | Ed25519 | RFC 8032 |
+| Hashing | SHA-256 | FIPS 180-4 |
+| Commitment verification | Python hash-commitment mode; Rust Pedersen implementation | ADR-002 |
+| Range proofs | Bulletproofs in the Rust ZKP module | Bünz et al., 2018 |
 
-All primitives provide 128-bit security against classical adversaries.
-Constant-time implementations via PyCA `cryptography` library.
+The Python implementation uses the PyCA `cryptography` library for its supported cryptographic operations.
 
-### Pipeline Architecture
-┌─────────────────────────────────────────────────────────────────┐
-│  CAR NODE                                                       │
-│  SensorSimulator → PacketBuilder → PacketSigner → Encryptor    │
-│  Real FastF1 data  64-byte header  Ed25519 sign  ChaCha20      │
-└────────────────────────────┬────────────────────────────────────┘
-│  X25519 ECDH (Session A)
-▼
-┌─────────────────────────────────────────────────────────────────┐
-│  RELAY NODE                                                     │
-│  PacketParser → Decryptor → IntegrityChecker → AnomalyFilter   │
-│  Validate        AEAD dec   Replay defence    Physical bounds  │
-│                             → ReEncryptor                      │
-│                               ChaCha20 (Session B)             │
-└────────────────────────────┬────────────────────────────────────┘
-│  X25519 ECDH (Session B)
-▼
-┌─────────────────────────────────────────────────────────────────┐
-│  FIA VALIDATOR                                                  │
-│  Decrypt → SignatureVerifier → SequenceChecker → ZKPVerifier   │
-│  Session B  Ed25519 verify     Replay defence    Commitment    │
-│             → AuditLogger                                      │
-│               ACCEPT/REJECT/FLAG → JSONL                       │
-└─────────────────────────────────────────────────────────────────┘
-### IAM Zero-Trust Model
-car_producer  → produce, sign, encrypt, transmit to relay only
-relay         → receive, decrypt, reencrypt, forward — never sign, never store
-fia_validator → receive, verify, audit log — never produce, never modify
-Explicit deny rules. Default deny for unknown nodes. All decisions logged.
+The listed primitives have established cryptographic specifications, but overall security depends on their implementation, key management, protocol design, configuration, and operational environment. The project has not undergone an independent security audit.
+
+### Pipeline architecture
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ CAR PRODUCER                                                  │
+│                                                              │
+│ SensorSimulator → PacketBuilder → PacketSigner → Encryptor   │
+│ FastF1-derived data   64-byte header   Ed25519   ChaCha20-    │
+│                                                  Poly1305     │
+└──────────────────────────────┬───────────────────────────────┘
+                               │
+                       X25519 ECDH session A
+                               │
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│ RELAY NODE                                                    │
+│                                                              │
+│ PacketParser → Decryptor → IntegrityChecker → AnomalyFilter │
+│                                      │                       │
+│                                      ▼                       │
+│                                  ReEncryptor                 │
+└──────────────────────────────┬───────────────────────────────┘
+                               │
+                       X25519 ECDH session B
+                               │
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│ FIA VALIDATOR                                                 │
+│                                                              │
+│ Decrypt → SignatureVerifier → Header/Metadata Consistency    │
+│                                      │                       │
+│                                      ▼                       │
+│                         SequenceChecker → ZKPVerifier        │
+│                                      │                       │
+│                                      ▼                       │
+│                         Accept / Reject / Flag                │
+│                                      │                       │
+│                                      ▼                       │
+│                                AuditLogger                   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Packet security
+
+The pipeline implements the following controls:
+
+- **Confidentiality:** authenticated encryption protects packet contents on each encrypted session leg.
+- **Authenticity:** Ed25519 signatures allow the validator to verify packets against registered producer public keys.
+- **Integrity:** authenticated encryption and signature verification detect relevant modifications.
+- **Replay resistance:** relay-side integrity checks and validator-side sequence checks provide independent layers of replay defence.
+- **Metadata consistency:** the validator checks the sequence number represented in the binary header against the outer packet metadata before downstream validation.
+- **Anomaly detection:** telemetry values are checked against configured or calibrated statistical bounds.
+- **Auditability:** validation decisions and rejection reasons can be recorded in the audit log.
+
+The relay re-encrypts traffic for the validator rather than simply forwarding the original encrypted payload. The two encrypted legs use separately established session keys.
+
+### Zero-trust access model
+
+The intended node responsibilities are:
+
+| Node | Responsibilities |
+|---|---|
+| Car producer | Produce, packetize, sign, encrypt, and transmit telemetry to the relay. |
+| Relay | Receive, decrypt, inspect, re-encrypt, and forward traffic. |
+| Validator | Verify packets, apply validation rules, and record decisions. |
+| IAM module | Evaluate configured identity, role, and access policies. |
+
+The design follows least-privilege principles and denies requests that fail the applicable identity or policy checks. Exact enforcement depends on the policy configuration and the code path being exercised.
 
 ---
 
-## Real F1 Data
-Source:       FastF1 API (official F1 Live Timing data)
-Constructors: Mercedes AMG · Red Bull Racing · Scuderia Ferrari
-McLaren Racing · Williams Racing
-Circuits:     13 (Bahrain · Saudi Arabia · Australia · Japan ·
-Monaco · Singapore · Monza · Silverstone ·
-Netherlands · Baku · Qatar · Abu Dhabi · São Paulo)
-Sessions:     Race · Qualifying · Sprint
-Channels:     Speed · RPM · Throttle · Brake · nGear · DRS
-Distance · X · Y (track coordinates)
-Anomaly detection thresholds calibrated per constructor from real
-telemetry baselines via `forensic/calibrate_thresholds.py`.
-Statistical baselines computed across all 13 circuits per team.
-Driver-level and lap-level filtering supported in the dashboard.
+## Real F1-Derived Telemetry
+
+Telemetry is sourced through the FastF1 API and stored locally for simulation and analysis.
+
+| Category | Supported data |
+|---|---|
+| Constructors | Mercedes-AMG, Red Bull Racing, Scuderia Ferrari, McLaren Racing, Williams Racing |
+| Circuits | Bahrain, Saudi Arabia, Australia, Japan, Monaco, Singapore, Monza, Silverstone, Netherlands, Baku, Qatar, Abu Dhabi, São Paulo |
+| Sessions | Race, qualifying, sprint, where available in the downloaded data |
+| Channels | Speed, RPM, throttle, brake, gear, DRS, distance, X, Y |
+| Analysis | Driver, lap, sector, track, and corner analysis |
+
+The repository includes scripts to fetch telemetry, derive per-team baselines, retrieve circuit corner positions, and calibrate anomaly-detection thresholds.
+
+Thresholds and baseline statistics depend on the downloaded dataset and configuration. They should not be interpreted as official FIA safety limits or universally valid physical constraints.
 
 ---
 
 ## Dashboard Features
 
-The live Streamlit dashboard provides:
+The Streamlit dashboard is designed to make telemetry and security behaviour inspectable during simulation.
 
-- **Real telemetry stream** — driver name, lap number, track position,
-  speed, RPM, throttle, gear per packet
-- **Driver selection** — filter to one specific driver's data
-- **Lap selection** — isolate a single lap for detailed analysis
-- **Dual-axis telemetry chart** — speed (red) and RPM (blue) over
-  packet sequence, independent y-axes with physical range limits
-- **Cryptographic pipeline panel** — live session keys, packet counts,
-  key rotation progress for both ECDH legs
-- **Threat detection panel** — deduplicates consecutive anomaly flags,
-  classifies tamper/replay/IAM/ZKP/signature events
-- **Attack injection** — three live attack types (tamper ciphertext,
-  replay old packet, forge signature) with real-time detection
-- **Side-by-side team comparison** — two independent pipelines,
-  proving cryptographic session isolation between constructors
-- **Immutable audit log** — every validator decision with UTC timestamp
-- **Anomaly statistics** — flag rate, channel breakdown, rejection count
+- **Telemetry feed:** driver, lap, speed, RPM, throttle, gear, and related packet fields.
+- **Driver and lap selection:** filter telemetry for a selected driver or lap.
+- **Telemetry charts:** inspect speed and RPM over packet sequence with separate axes.
+- **Cryptographic pipeline monitoring:** view packet counts and session/key information exposed by the implementation.
+- **Threat detection:** display and classify detected security events, including tampering, replay, IAM, commitment, and signature-related events where supported.
+- **Attack injection:** demonstrate selected tampering, replay, and signature-forgery scenarios.
+- **Team comparison:** inspect two independently configured pipelines.
+- **Audit viewer:** inspect recorded validator decisions and timestamps.
+- **Anomaly statistics:** review rejection and anomaly information exposed by the dashboard.
+
+Dashboard features depend on the selected dataset, available fields, runtime configuration, and installed dependencies.
 
 ---
 
-## Simulation Results
+## Security Simulation Results
 
-### Tampering Detection — 7/7 Attacks Detected
+The repository contains scripts for tampering, replay, and IAM breach scenarios.
 
-| Attack | Defence Layer | Result |
-|---|---|---|
-| Payload bit flip | ChaCha20-Poly1305 AEAD at relay | ✅ DETECTED |
-| Speed value injection | Ed25519 signature at validator | ✅ DETECTED |
-| Signature stripping | SignatureVerifier | ✅ DETECTED |
-| ZKP commitment tamper | ZKPVerifier | ✅ DETECTED |
-| Header AEAD tamper | AEAD associated data at relay | ✅ DETECTED |
-| Wrong signature | Ed25519 verification | ✅ DETECTED |
-| Multi-layer tamper | AEAD catches first — relay | ✅ DETECTED |
+### Tampering scenarios
 
-### Replay Attack Detection — 4/5 Vectors Detected
+The documented simulation scenarios include:
 
-| Attack | Result |
+| Attack scenario | Intended defence |
 |---|---|
-| Simple replay | ✅ Dual-tier sequence check |
-| Sequence manipulation | ✅ Validator sequence checker |
-| Batch replay (5 packets) | ✅ All 5 detected |
-| Delayed replay | ✅ Validator sequence checker |
-| Sequence increment* | ⚠️ Known simulation limitation |
+| Payload bit modification | Authenticated encryption |
+| Telemetry value injection | Packet authentication and signature verification, depending on where modification occurs |
+| Signature stripping | Signature validation and rejection of missing authentication data |
+| Commitment modification | Commitment verification |
+| Authenticated-header modification | AEAD authentication |
+| Invalid signature | Ed25519 verification |
+| Multi-layer modification | The earliest applicable integrity control |
 
-*In production, the sequence number is embedded in the binary header
-and covered by the Ed25519 signature — modification would fail
-signature verification. Documented in `docs/THREAT_MODEL.md`.
+The automated test suite now includes a passing test that corrupts a byte in the 64-byte Ed25519 signature and verifies that the validator rejects the packet.
 
-### IAM Breach Simulation — 7/7 Scenarios Defended
+**Simulation results are not a substitute for independent attack evaluation.** The actual defence depends on the attack location, the fields modified, and the validation path reached.
 
-| Attack Vector | Blocked |
-|---|---|
-| Unknown node access (4 attempts) | ✅ 4/4 |
-| Cross-team data access (4 attempts) | ✅ 4/4 |
-| Car → Validator bypass (4 attempts) | ✅ 4/4 |
-| Relay impersonation (4 attempts) | ✅ 4/4 |
-| Privilege escalation (8 attempts) | ✅ 8/8 |
-| Audit log tampering (6 attempts) | ✅ 6/6 |
-| Denial storm (8 probes) | ✅ Alert triggered |
+### Replay scenarios
+
+The repository includes replay simulations covering scenarios such as duplicate packets, manipulated sequences, batches of repeated packets, and delayed traffic.
+
+Replay resistance depends on sequence-state management and packet validation. Sequence manipulation must be tested against the actual binary-header, signature, and metadata-validation paths rather than assumed to be detected by one control in every circumstance.
+
+See [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) for the documented threat assumptions and limitations.
+
+### IAM scenarios
+
+The IAM simulation exercises access-control scenarios involving unknown identities, cross-team access, direct-path attempts, relay impersonation, privilege escalation, audit-log tampering, and request storms.
+
+The results should be evaluated against the configured policy and the assertions in the relevant tests. A simulation result does not establish that every possible IAM bypass has been eliminated.
 
 ---
 
 ## Test Coverage
-pytest car-producer/tests/ relay-node/tests/ validator-node/tests/ iam-module/tests/ -v
 
-car-producer/tests/    ── 40 tests  ── packet, crypto, signatures
-relay-node/tests/      ── 66 tests  ── parse, decrypt, anomaly, integrity
-validator-node/tests/  ── 60+ tests ── verify, sequence, ZKP
-iam-module/tests/      ── 90+ tests ── RBAC, policy, identity
-─────────────────────────────────────────
-Total:                   255 tests, all passing
+### Latest verified result
+
+The most recent full-project test run completed successfully:
+
+```text
+422 passed in 448.30s (0:07:28)
+```
+
+That run reported zero failures and zero skipped tests.
+
+The suite includes tests across the car producer, relay, validator, IAM, and related project modules. The exact count may change as tests are added or modified.
+
+Run the complete suite from the repository root:
+
+```bash
+python -m pytest -q
+```
+
+Run the packet-integrity tests:
+
+```bash
+python -m pytest ./validator-node/tests/test_packet_integrity.py -q
+```
+
+Run the validator tests:
+
+```bash
+python -m pytest ./validator-node/tests -q
+```
+
+On Windows PowerShell, the equivalent commands using backslashes are also supported.
+
+### Security tests recently verified
+
+The packet-integrity tests cover:
+
+- Ciphertext tampering.
+- Authenticated-header tampering.
+- Header/outer-metadata sequence mismatch, including stopping downstream validation.
+- Invalid Ed25519 signature rejection.
+
+Other existing tests cover replay handling, validator sequencing, audit events, and additional project functionality.
+
+**Passing tests demonstrate the behaviour exercised by those tests, not proof of complete security.** Further work should expand adversarial cases, validate key-rotation and failure behaviour, test Rust integration, and benchmark runtime performance.
+
 ---
 
 ## Quick Start
 
 ### Prerequisites
 
+- Python 3.11 or newer
+- Git
+- A local telemetry dataset for workflows that depend on downloaded data
+- Rust and Cargo for the Rust ZKP module
+
+### Clone and install
+
+Replace the repository URL below with the actual public GitHub URL if you are cloning from a fork.
+
 ```bash
-Python 3.11+
-Git
+git clone https://github.com/<your-username>/pitcrypt-f1.git
+cd pitcrypt-f1
+
+python -m venv f1env
 ```
 
-### Install
+Activate the environment.
+
+**Windows PowerShell:**
+
+```powershell
+.\f1env\Scripts\Activate.ps1
+```
+
+**Windows Command Prompt:**
+
+```bat
+f1env\Scripts\activate.bat
+```
+
+**macOS / Linux:**
 
 ```bash
-git clone https://github.com/your-username/pitcrypt-f1.git
-cd pitcrypt_f1
-python -m venv f1env
-f1env\Scripts\activate.bat        # Windows
-# source f1env/bin/activate        # macOS / Linux
+source f1env/bin/activate
+```
+
+Install the dependencies:
+
+```bash
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### Run the Pipeline
+If the dashboard dependencies are not already included:
+
+```bash
+pip install streamlit plotly
+```
+
+### Run the validator
 
 ```bash
 python validator-node/src/main.py
 ```
 
-Expected output:
-✅ ACCEPTED — seq=1  node=mercedes_car team=mercedes
-...
-✅ ACCEPTED — seq=10 node=mercedes_car team=mercedes
-Received: 10 | Accepted: 10 | Rejected: 0
-### Run Attack Simulations
+The actual output depends on the local configuration, keys, telemetry data, and startup path. The validator should be tested using the repository's fixtures and configured demonstration pipeline rather than assuming a fixed number of packets will always be accepted.
+
+### Run attack simulations
 
 ```bash
 python simulations/replay_attack_sim.py
@@ -220,139 +323,133 @@ python simulations/tampering_sim.py
 python simulations/iam_breach_sim.py
 ```
 
-### Run Dashboard
+### Run the dashboard
 
 ```bash
-pip install streamlit plotly
 streamlit run dashboard/app.py
 ```
 
-### Run Tests
+### Run tests
 
 ```bash
-pytest car-producer/tests/ relay-node/tests/ validator-node/tests/ iam-module/tests/ -v
+python -m pytest -q
 ```
 
-### Generate Telemetry Data
+### Generate or process telemetry data
+
+Run the applicable scripts from the repository root:
 
 ```bash
-python forensic/fetch_telemetry.py          # Mercedes + Red Bull
-python forensic/fetch_one_team.py           # Ferrari / McLaren / Williams (one per hour)
-python forensic/fetch_circuit_corners.py    # Track corner positions
-python forensic/forensic_analysis.py        # Compute per-team baselines
-python forensic/calibrate_thresholds.py     # Derive anomaly thresholds
+python forensic/fetch_telemetry.py
+python forensic/fetch_one_team.py
+python forensic/fetch_circuit_corners.py
+python forensic/forensic_analysis.py
+python forensic/calibrate_thresholds.py
 ```
+
+These scripts may require network access, valid dependencies, API availability, and local data directories. Some fetch scripts may be subject to rate limits.
 
 ---
 
 ## Project Structure
+
+```text
 pitcrypt_f1/
-├── car-producer/           ← Telemetry production + crypto
+├── car_producer/
 │   ├── src/
-│   │   ├── sensor_simulator.py    ← FastF1 telemetry with driver/lap filter
-│   │   ├── corner_lookup.py       ← Nearest-corner lookup via X/Y coordinates
-│   │   ├── packet_builder.py      ← Binary header + JSON payload
-│   │   ├── signer.py              ← Ed25519 signing
-│   │   ├── encryptor.py           ← ChaCha20-Poly1305 encryption
-│   │   ├── crypto_engine.py       ← X25519 ECDH + HKDF
-│   │   └── key_scheduler.py       ← Dual-trigger key rotation
+│   │   ├── sensor_simulator.py
+│   │   ├── corner_lookup.py
+│   │   ├── packet_builder.py
+│   │   ├── signer.py
+│   │   ├── encryptor.py
+│   │   ├── crypto_engine.py
+│   │   └── key_scheduler.py
 │   └── tests/
 │
-├── relay-node/             ← Decrypt · Filter · Re-encrypt
+├── relay-node/
 │   ├── src/
-│   │   ├── packet_parser.py       ← Deserialise + validate
-│   │   ├── decryptor.py           ← AEAD decrypt car leg
-│   │   ├── integrity_checker.py   ← Replay + sequence defence
-│   │   ├── anomaly_filters.py     ← Statistical bounds checking
-│   │   └── reencryptor.py         ← Re-encrypt for validator
-│   ├── config/relay.yaml
+│   │   ├── packet_parser.py
+│   │   ├── decryptor.py
+│   │   ├── integrity_checker.py
+│   │   ├── anomaly_filters.py
+│   │   └── reencryptor.py
+│   ├── config/
 │   └── tests/
 │
-├── validator-node/         ← Verify · Log · Accept/Reject
+├── validator-node/
 │   ├── src/
-│   │   ├── signature_verifier.py  ← Ed25519 verification
-│   │   ├── sequence_checker.py    ← Independent replay defence
-│   │   ├── zkp_verifier.py        ← Commitment verification
-│   │   ├── audit_logger.py        ← Immutable JSONL audit trail
-│   │   └── main.py                ← Full validator pipeline
-│   ├── config/validator.yaml
+│   │   ├── signature_verifier.py
+│   │   ├── sequence_checker.py
+│   │   ├── zkp_verifier.py
+│   │   ├── audit_logger.py
+│   │   └── main.py
+│   ├── config/
 │   └── tests/
 │
-├── iam-module/             ← Zero-trust access control
+├── iam-module/
 │   ├── src/
-│   │   ├── identity_store.py      ← Node identity registry
-│   │   ├── policy_loader.py       ← YAML policy evaluation
-│   │   ├── rbac_engine.py         ← RBAC enforcement
-│   │   └── access_auditor.py      ← IAM decision logging
-│   ├── policies/                  ← Per-role YAML policies
-│   └── config/iam.yaml
+│   │   ├── identity_store.py
+│   │   ├── policy_loader.py
+│   │   ├── rbac_engine.py
+│   │   └── access_auditor.py
+│   ├── policies/
+│   ├── config/
+│   └── tests/
 │
-├── forensic/               ← Real F1 telemetry analysis
-│   ├── fetch_telemetry.py         ← Mercedes + Red Bull download
-│   ├── fetch_one_team.py          ← Single-team rate-limit-safe fetch
-│   ├── fetch_circuit_corners.py   ← Per-circuit corner positions
-│   ├── forensic_analysis.py       ← Statistical baselines per team
-│   ├── calibrate_thresholds.py    ← Anomaly threshold derivation
-│   └── visualise_telemetry.py     ← 5 matplotlib visualisations
+├── forensic/
+│   ├── fetch_telemetry.py
+│   ├── fetch_one_team.py
+│   ├── fetch_circuit_corners.py
+│   ├── forensic_analysis.py
+│   ├── calibrate_thresholds.py
+│   └── visualise_telemetry.py
 │
-├── simulations/            ← Attack scenario simulations
-│   ├── replay_attack_sim.py       ← 5 replay vectors
-│   ├── tampering_sim.py           ← 7 tamper vectors
-│   ├── iam_breach_sim.py          ← 7 IAM breach vectors
-│   ├── packet_loss_sim.py         ← Loss resilience
-│   ├── jitter_sim.py              ← Jitter + latency benchmarks
+├── simulations/
+│   ├── replay_attack_sim.py
+│   ├── tampering_sim.py
+│   ├── iam_breach_sim.py
+│   ├── packet_loss_sim.py
+│   ├── jitter_sim.py
 │   └── results/
 │
-├── zkp-module/             ← Rust ZKP (Pedersen + Bulletproofs)
+├── zkp-module/
 │   ├── Cargo.toml
 │   └── src/
 │       ├── lib.rs
-│       ├── commitments.rs         ← Pedersen + hash commitments
-│       ├── proof_system.rs        ← Bulletproof range proofs
-│       ├── transcript.rs          ← Fiat-Shamir transcript
+│       ├── commitments.rs
+│       ├── proof_system.rs
+│       ├── transcript.rs
 │       └── errors.rs
 │
-├── dashboard/              ← Streamlit security dashboard
-│   ├── app.py                     ← Main dashboard application
-│   ├── assets/                    ← Logo, favicon, branding
+├── dashboard/
+│   ├── app.py
+│   ├── assets/
 │   └── components/
-│       ├── telemetry_feed.py      ← Full pipeline wrapper
-│       ├── threat_panel.py        ← Threat classification + dedup
-│       ├── key_rotation_view.py   ← Key rotation monitor
-│       └── audit_log_view.py      ← Audit log viewer + export
 │
 ├── architecture/
-│   └── adr/                ← 5 Architecture Decision Records
+│   └── adr/
 │
-├── docs/                   ← Full security documentation
-│   ├── THREAT_MODEL.md            ← STRIDE analysis (23 threats)
-│   ├── MITRE_ATTACK_MAPPING.md    ← 33 ATT&CK techniques
-│   ├── THREAT_INTELLIGENCE.md     ← APT actors + CVEs
-│   ├── PACKET_FORMAT.md           ← Binary packet spec
-│   ├── CRYPTOGRAPHIC_PRIMITIVES.md
-│   ├── KEY_MANAGEMENT.md
-│   ├── ARCHITECTURE_OVERVIEW.md
-│   ├── NETWORK_TOPOLOGY.md
-│   ├── PROTOCOL_SPEC.md
-│   ├── FIA_DATA_PRIVACY_MODEL.md
-│   ├── FIA_REGULATION_MAPPING.md
-│   └── FORENSIC_ANALYSIS.md
+├── docs/
 │
-└── data/                   ← Gitignored — regenerate locally
-├── raw/                ← Per-team per-circuit CSV files
-├── processed/          ← Baselines + thresholds.json
-└── circuits/           ← Per-circuit corner position JSON
+└── data/                 # Local/generated data; typically gitignored
+    ├── raw/
+    ├── processed/
+    └── circuits/
+```
+
 ---
 
 ## Architecture Decision Records
 
 | ADR | Decision | Rationale |
 |---|---|---|
-| [ADR-001](architecture/adr/001-crypto-choice.md) | X25519 + ChaCha20-Poly1305 + Ed25519 | Constant-time, software-optimised, RFC-standardised |
-| [ADR-002](architecture/adr/002-zkp-commitments.md) | Pedersen commitments + Bulletproofs | Perfect hiding for proprietary telemetry values |
-| [ADR-003](architecture/adr/003-key-rotation-policy.md) | Dual-trigger 300s / 10,000 packets | Bounds exposure by both time and volume |
-| [ADR-004](architecture/adr/004-iam-rbac-model.md) | RBAC over ABAC | Predictable, auditable, FIA-explainable |
-| [ADR-005](architecture/adr/005-cloud-kms-choice.md) | AWS KMS HSM for identity keys | Non-extractable private keys in production |
+| [ADR-001](architecture/adr/001-crypto-choice.md) | X25519, ChaCha20-Poly1305, Ed25519 | Standardised primitives for key agreement, authenticated encryption, and signatures |
+| [ADR-002](architecture/adr/002-zkp-commitments.md) | Pedersen commitments and Bulletproofs | Design for commitments and range proofs |
+| [ADR-003](architecture/adr/003-key-rotation-policy.md) | Time- and volume-based rotation policy | Bound session-key usage by time and packet volume |
+| [ADR-004](architecture/adr/004-iam-rbac-model.md) | Role-based access control | Explicit and auditable role policies |
+| [ADR-005](architecture/adr/005-cloud-kms-choice.md) | AWS KMS/HSM design decision | Intended approach for production identity-key protection |
+
+The ADRs describe architectural decisions and intended controls. They do not imply that every production-oriented component, including hardware-backed key management, is deployed in the current prototype.
 
 ---
 
@@ -360,58 +457,74 @@ pitcrypt_f1/
 
 | Document | Description |
 |---|---|
-| [THREAT_MODEL](docs/THREAT_MODEL.md) | Full STRIDE matrix — 23 threats across 6 categories |
-| [MITRE_ATTACK_MAPPING](docs/MITRE_ATTACK_MAPPING.md) | 33 ATT&CK techniques with controls |
-| [THREAT_INTELLIGENCE](docs/THREAT_INTELLIGENCE.md) | APT actors, CVEs, kill chain |
-| [FIA_REGULATION_MAPPING](docs/FIA_REGULATION_MAPPING.md) | 8 regulations mapped to controls |
-| [PROTOCOL_SPEC](docs/PROTOCOL_SPEC.md) | Full wire protocol specification |
-| [KEY_MANAGEMENT](docs/KEY_MANAGEMENT.md) | Key hierarchy, rotation, compromise response |
+| [Threat Model](docs/THREAT_MODEL.md) | STRIDE analysis and documented threats |
+| [MITRE ATT&CK Mapping](docs/MITRE_ATTACK_MAPPING.md) | Mapping of selected ATT&CK techniques to controls |
+| [Threat Intelligence](docs/THREAT_INTELLIGENCE.md) | Threat actors, CVEs, and attack context |
+| [Packet Format](docs/PACKET_FORMAT.md) | Binary packet-format documentation |
+| [Cryptographic Primitives](docs/CRYPTOGRAPHIC_PRIMITIVES.md) | Cryptographic design and primitive choices |
+| [Key Management](docs/KEY_MANAGEMENT.md) | Key hierarchy, rotation, and compromise considerations |
+| [Architecture Overview](docs/ARCHITECTURE_OVERVIEW.md) | System architecture |
+| [Network Topology](docs/NETWORK_TOPOLOGY.md) | Node connectivity and data flow |
+| [Protocol Specification](docs/PROTOCOL_SPEC.md) | Protocol behaviour and message flow |
+| [FIA Data Privacy Model](docs/FIA_DATA_PRIVACY_MODEL.md) | Data-protection design considerations |
+| [FIA Regulation Mapping](docs/FIA_REGULATION_MAPPING.md) | Regulation-to-control mapping |
+| [Forensic Analysis](docs/FORENSIC_ANALYSIS.md) | Telemetry baselines and analysis |
 
 ---
 
-## Status
+## Project Status
 
 | Component | Status |
 |---|---|
-| Car Producer Pipeline | ✅ Complete |
-| Relay Node Pipeline | ✅ Complete |
-| FIA Validator Pipeline | ✅ Complete |
-| IAM Zero-Trust Module | ✅ Complete |
-| Attack Simulations | ✅ Complete |
-| Forensic Analysis | ✅ Complete |
-| Streamlit Dashboard | ✅ Complete |
-| Security Documentation | ✅ Complete |
-| Driver + Lap Selection | ✅ Complete |
-| Track Corner Lookup | 🔄 In Progress |
-| ZKP Rust Module | 🔄 In Progress |
-| Benchmarks | 🔄 Planned |
-| Research Paper | 🔄 Planned |
+| Car producer pipeline | Implemented and tested |
+| Relay processing pipeline | Implemented and tested |
+| Validator pipeline | Implemented and tested |
+| IAM module | Implemented and tested |
+| Attack simulation scripts | Implemented; continue expanding coverage |
+| Telemetry ingestion and analysis | Implemented for supported datasets and workflows |
+| Streamlit dashboard | Implemented; manual smoke testing remains useful |
+| Security documentation | Available; should evolve with the implementation |
+| Driver and lap filtering | Implemented for supported data paths |
+| Corner lookup | Further validation and refinement |
+| Rust ZKP module | Integration and verification work remains |
+| Performance benchmarking | Planned / requires measured results |
+| Independent security review | Not yet established |
+| Research paper | Planned |
+
+### Next engineering milestones
+
+1. Expand adversarial tests for malformed packets, replay edge cases, key rotation, and session isolation.
+2. Benchmark throughput, median latency, p95 latency, and packet-loss behaviour under documented workloads.
+3. Complete and test the Rust ZKP integration.
+4. Verify dashboard behaviour against actual validator outcomes.
+5. Document limitations and reproducible test/benchmark procedures.
+6. Consider independent security review before making production-readiness claims.
 
 ---
 
-## Target Universities
+## Intended Research and Academic Applications
 
-This project was developed as the flagship portfolio
-piece for Masters applications in cybersecurity and
-applied cryptography:
+PitCrypt-F1 is a portfolio project at the intersection of cybersecurity, applied cryptography, software systems, and motorsport telemetry engineering.
 
-- **University of Bonn** — IT Security MSc
-- **Saarland / CISPA** — Cybersecurity MSc
-- **TU Delft** — Cyber Security MSc
-- **University of Twente** — Computer Security MSc
-- **RWTH Aachen** — IT Security MSc
+Potentially relevant academic areas include:
+
+- Cybersecurity and information security
+- Applied cryptography and protocol design
+- Secure systems engineering
+- Automotive and motorsport data systems
+- Telemetry integrity, anomaly detection, and observability
+
+The project can serve as a practical demonstration of engineering work, provided the implementation details, test results, limitations, and unfinished components are described accurately.
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
-
----
+MIT — see [LICENSE](LICENSE).
 
 <div align="center">
 
-*Built with real F1 data · Cryptographically secured · Zero-trust by design*
+*Built with real F1-derived telemetry · Cryptographic protection · Zero-trust design*
 
 **Car → Relay → Validator → Audit**
 
