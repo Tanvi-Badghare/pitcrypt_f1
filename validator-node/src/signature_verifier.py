@@ -167,16 +167,38 @@ class ValidatorSignatureVerifier:
             )
 
         # ── Resolve signature bytes ──────────────────────────────
+        
+        # ── Resolve and validate signature bytes ──
         sig = packet.get('signature_bytes')
+
         if sig is None:
             sig_hex = packet.get('signature', '')
+
             if not sig_hex:
                 self._rejected_count += 1
                 raise SignatureVerificationError(
-                    f"Packet from '{node_id}' "
-                    f"has no signature."
+                    f"Packet from '{node_id}' has no signature."
                 )
-            sig = bytes.fromhex(sig_hex)
+
+            if not isinstance(sig_hex, str):
+                self._rejected_count += 1
+                raise SignatureVerificationError(
+                    "Signature hex representation must be a string."
+                )
+
+            try:
+                sig = bytes.fromhex(sig_hex)
+            except ValueError as exc:
+                self._rejected_count += 1
+                raise SignatureVerificationError(
+                    "Signature is not valid hexadecimal."
+                ) from exc
+
+        if not isinstance(sig, bytes):
+            self._rejected_count += 1
+            raise SignatureVerificationError(
+                "Signature bytes must be a bytes object."
+            )
 
         if len(sig) != SIGNATURE_SIZE:
             self._rejected_count += 1
