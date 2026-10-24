@@ -1,441 +1,577 @@
 # Forensic Analysis — PitCrypt-F1
 
-**Document:** FORENSIC_ANALYSIS.md  
-**Version:** 1.0  
+**Document:** `FORENSIC_ANALYSIS.md`  
+**Version:** 1.1  
 **Project:** PitCrypt-F1  
-**Status:** Authoritative
+**Status:** Prototype analysis methodology — results require reproducible verification  
+**Last reviewed:** 24 October 2026
 
 ---
 
-## Overview
+## 1. Overview
 
-This document describes the forensic telemetry
-analysis methodology used in PitCrypt-F1 to
-establish statistical baselines, calibrate anomaly
-detection thresholds, and generate the visualisations
-used for security assessment.
+This document describes the forensic telemetry analysis workflow used by PitCrypt-F1 to explore telemetry distributions, calculate statistical baselines, calibrate anomaly-detection thresholds, and generate visualisations for security assessment.
 
-The forensic analysis module processes real 2025
-Formula 1 telemetry data from Mercedes AMG and
-Red Bull Racing sourced via the FastF1 API.
+The project uses the FastF1 Python library to retrieve Formula 1 timing and telemetry data. The analysis is intended to provide context for telemetry validation and anomaly detection; it is not a formal forensic certification or evidence that the dataset represents every car, session, or operating condition.
 
----
+Statistical anomalies are not necessarily security incidents. Unusual values can arise from pit-lane movement, braking, safety-car periods, session transitions, sensor behaviour, or data-processing artefacts. A security conclusion requires additional context and corroborating evidence.
 
-## Data Sources
+Dataset counts, summary statistics, generated plots, and threshold outputs in this document should be treated as reported results until they can be reproduced from the current repository, source data, and configuration.
 
-### FastF1 API
+## 2. Data sources
 
-FastF1 is an open-source Python library providing
-access to official Formula 1 timing and telemetry
-data from the F1 Live Timing API.
+### 2.1 FastF1
+
+FastF1 is a Python library that provides access to Formula 1 timing and telemetry data through supported data sources.
+
+Example session-loading code:
 
 ```python
 import fastf1
 
-session = fastf1.get_session(2025, 'Bahrain', 'R')
+session = fastf1.get_session(2025, "Bahrain", "R")
 session.load(telemetry=True, laps=True)
 ```
 
-### Coverage
-Constructors:  Mercedes AMG Petronas
-Red Bull Racing
-Circuits:      Abu Dhabi, Australia, Bahrain,
-Baku, Japan, Monaco, Monza,
-Netherlands, Qatar, Saudi Arabia,
-Silverstone, Singapore, São Paulo
-Sessions:      Race (R), Qualifying (Q), Sprint (S)
-Total rows:    1,814,537 (Mercedes)
-~1,566,769 (Red Bull, subset)
-Channels:      Speed (km/h), RPM, Throttle (%),
-Brake (0/1), nGear (0-8), DRS (0-14)
-### Data Quality
-Missing values: 0 rows dropped across all datasets
-Encoding:       UTF-8, São Paulo handled correctly
-Negative speed: -0.04 to -0.06 km/h observed
-(pit lane rollback — legitimate)
-DRS encoding:   FastF1 integer 0-14 (not boolean)
----
+The exact data available depends on the session, the library version, the underlying data source, and the fields exposed by the loaded objects.
 
-## Forensic Pipeline
-FastF1 API
-│
-▼
-fetch_telemetry.py          ← Download raw CSVs
-│  data/raw/.csv
-▼
-forensic_analysis.py        ← Load + clean + baseline
-│  data/processed/_baseline.csv
-│  data/processed/thresholds.json
-▼
-calibrate_thresholds.py     ← Per-team bounds
-│  data/processed/thresholds.json (updated)
-▼
-visualise_telemetry.py      ← Generate plots
-│  architecture/diagrams/*.png
-▼
-AnomalyFilter               ← Load thresholds at runtime
-(relay-node/src/anomaly_filters.py)
----
+The resulting data should be described as telemetry retrieved through FastF1, rather than as a separately certified or independently verified forensic evidence source.
 
-## Statistical Baseline Computation
+### 2.2 Reported dataset coverage
 
-### Method
+The original project notes report analysis of Mercedes-AMG Petronas and Red Bull Racing data from 13 circuits:
 
-For each team, circuit, and session combination,
-`forensic_analysis.py` computes:
+- Abu Dhabi
+- Australia
+- Bahrain
+- Baku
+- Japan
+- Monaco
+- Monza
+- Netherlands
+- Qatar
+- Saudi Arabia
+- Silverstone
+- Singapore
+- São Paulo
+
+The reported session categories include Race (`R`), Qualifying (`Q`), and Sprint (`S`). The exact meaning and availability of session identifiers must be checked against the acquisition script and generated files.
+
+Previously recorded row counts were:
+
+| Dataset | Reported rows | Verification status |
+|---|---:|---|
+| Mercedes | 1,814,537 | Reproduce from the current dataset before treating as a verified result |
+| Red Bull | Approximately 1,566,769 | Reported subset; exact coverage and row count require verification |
+
+These counts can change if sessions, channels, filtering rules, FastF1 versions, or data-loading behaviour change. A reproducible report should record the acquisition date, library version, included sessions, file names, and row counts.
+
+### 2.3 Channels
+
+The original analysis describes the following channels:
+
+| Channel | Interpretation | Important consideration |
+|---|---|---|
+| `Speed` | Speed in km/h | Small negative values may occur in source data; inspect context before classifying them as errors. |
+| `RPM` | Engine speed | Values depend on data availability and operating conditions. |
+| `Throttle` | Throttle percentage | Check expected scale and source representation. |
+| `Brake` | Brake indicator or channel value | The documented binary interpretation must be confirmed for each dataset. |
+| `nGear` | Gear value | Validate against the source encoding and expected range. |
+| `DRS` | DRS state encoding | Do not assume it is a Boolean channel; the source may encode multiple states. |
+
+Current project telemetry may also include `X`, `Y`, and `Distance`. Include those channels in a baseline only when the analysis code explicitly loads and processes them.
+
+### 2.4 Data-quality observations
+
+The original notes report the following observations:
+
+- No rows were dropped for missing values in the examined datasets.
+- UTF-8 handling was considered for the São Paulo circuit name.
+- Speed values around -0.04 to -0.06 km/h were observed.
+- DRS values were treated as an integer state encoding rather than a Boolean value.
+
+These observations are useful hypotheses for repeatable data-quality checks, not universal properties of all FastF1 datasets. Re-run missing-value, encoding, range, and channel-type checks after downloading or regenerating the data.
+
+A data-quality report should record:
+
+- Rows loaded and rows excluded.
+- Missing values by channel.
+- Duplicate timestamps or samples, where applicable.
+- Non-finite values.
+- Observed minimum and maximum values.
+- Channel types and units.
+- Source session and driver identifiers.
+- Any cleaning, interpolation, or transformation applied.
+
+Do not claim that no rows were dropped unless the current execution output supports that statement.
+
+## 3. Forensic analysis pipeline
+
+The intended workflow is:
+
+```text
+FastF1 data source
+        |
+        v
+forensic/fetch_telemetry.py
+        |
+        v
+Raw telemetry files
+        |
+        v
+forensic/forensic_analysis.py
+        |
+        +--> Baseline statistics
+        +--> Forensic summary
+        |
+        v
+forensic/calibrate_thresholds.py
+        |
+        v
+Threshold configuration
+        |
+        v
+forensic/visualise_telemetry.py
+        |
+        v
+Generated plots
+        |
+        v
+relay-node/src/anomaly_filters.py
+        |
+        v
+Runtime anomaly decisions
+```
+
+This is the intended data flow described by the project documentation. Confirm each input/output path and the runtime loading behaviour against the current source before treating the entire workflow as an integrated pipeline.
+
+In particular, producing a threshold JSON file does not establish that the relay loads it, interprets it correctly, or applies every generated threshold to incoming telemetry.
+
+## 4. Statistical baseline computation
+
+### 4.1 Purpose
+
+Baselines summarise the observed distribution of telemetry values. They can help identify unusual observations and inform threshold calibration.
+
+The analysis should distinguish baseline generation from runtime detection. A descriptive statistical summary does not automatically define an appropriate security boundary.
+
+### 4.2 Reported statistics
+
+For each supported channel and selected grouping, the original methodology computes:
+
+- Mean
+- Standard deviation
+- Minimum and maximum
+- 1st and 5th percentiles
+- 95th and 99th percentiles
+
+Example:
 
 ```python
-for channel in ['Speed', 'RPM', 'Throttle',
-                'Brake', 'nGear', 'DRS']:
+channels = [
+    "Speed", "RPM", "Throttle",
+    "Brake", "nGear", "DRS"
+]
+
+for channel in channels:
     baseline[channel] = {
-        'mean':   df[channel].mean(),
-        'std':    df[channel].std(),
-        'min':    df[channel].min(),
-        'max':    df[channel].max(),
-        'p01':    df[channel].quantile(0.01),
-        'p05':    df[channel].quantile(0.05),
-        'p95':    df[channel].quantile(0.95),
-        'p99':    df[channel].quantile(0.99),
+        "mean": df[channel].mean(),
+        "std": df[channel].std(),
+        "min": df[channel].min(),
+        "max": df[channel].max(),
+        "p01": df[channel].quantile(0.01),
+        "p05": df[channel].quantile(0.05),
+        "p95": df[channel].quantile(0.95),
+        "p99": df[channel].quantile(0.99),
     }
 ```
 
-### Z-Score Anomaly Detection
+This snippet illustrates the intended calculations. Confirm the actual grouping keys, missing-value treatment, standard-deviation convention, and output schema against `forensic_analysis.py`.
 
-Anomaly detection uses Z-score against the
-global baseline (all races combined):
+The project notes describe baselines by team, circuit, and session combination. They also describe a global baseline for some anomaly detection. Those are distinct choices and should not be conflated.
+
+### 4.3 Grouping and distribution shifts
+
+Telemetry distributions vary with:
+
+- Circuit layout and surface characteristics.
+- Race, qualifying, and sprint sessions.
+- Pit-lane entry and exit.
+- Outlaps, inlaps, and other non-representative periods.
+- Weather and track conditions.
+- Driver behaviour and car setup.
+- Data availability and sampling behaviour.
+
+A global baseline can be useful for broad exploratory analysis, but it may flag normal values from a particular context. Where sufficient data exists, evaluate separate baselines by channel, team, circuit, session type, and relevant operating state.
+
+Do not treat a team-specific statistical difference as evidence of malicious behaviour.
+
+## 5. Z-score anomaly analysis
+
+### 5.1 Formula
+
+For a value \(x\), mean \(\mu\), and standard deviation \(\sigma\), the absolute Z-score is:
+
+\[
+z = \frac{|x-\mu|}{\sigma}
+\]
+
+A common exploratory threshold is \(z > 3\). The calculation must handle zero or non-finite standard deviations and missing or non-numeric values explicitly.
+
+Example:
 
 ```python
-z_score = abs(value - channel_mean) / channel_std
-
-ANOMALY_THRESHOLD = 3.0  # 3 standard deviations
-
-if z_score > ANOMALY_THRESHOLD:
-    flag_as_anomaly(channel, value, z_score)
+if std > 0:
+    z_score = abs(value - mean) / std
+else:
+    # Define an explicit policy for constant or invalid baselines.
+    z_score = None
 ```
 
-Values beyond 3 standard deviations from the
-mean represent less than 0.3% of the distribution
-under normality — flagged for review.
+### 5.2 Interpretation
 
-### Baseline Statistics (Mercedes AMG)
+Under a normal distribution, observations beyond three standard deviations are uncommon. However, motorsport telemetry is not guaranteed to follow a normal distribution.
 
-Computed from 1,814,537 rows across all 13 circuits:
+Some channels are bounded, discrete, or multimodal. `Brake` may be binary in a particular dataset, while `DRS` represents discrete states. A global Z-score can therefore be misleading.
 
-| Channel | Mean | Std Dev | Min | Max | P95 |
-|---|---|---|---|---|---|
+A three-standard-deviation threshold should be treated as an exploratory statistical rule, not as a universal probability guarantee or a security detector.
+
+A value flagged by this method should be reviewed alongside:
+
+- The channel and unit.
+- The relevant circuit and session.
+- Adjacent telemetry samples.
+- Vehicle state and operating context.
+- Source-data quality.
+- The result of independent validation checks.
+
+### 5.3 Baseline statistics
+
+The original document reported the following Mercedes summary values:
+
+| Channel | Reported mean | Reported standard deviation | Reported minimum | Reported maximum | Reported P95 |
+|---|---:|---:|---:|---:|---:|
 | Speed (km/h) | 187.3 | 89.2 | -0.06 | 345.1 | 308.4 |
-| RPM | 9842.1 | 2891.4 | 0 | 13812 | 13204 |
+| RPM | 9,842.1 | 2,891.4 | 0 | 13,812 | 13,204 |
 | Throttle (%) | 58.7 | 43.8 | 0 | 100 | 100 |
-| Brake (0/1) | 0.14 | 0.35 | 0 | 1 | 1 |
-| nGear | 5.2 | 1.8 | 0 | 8 | 8 |
+| Brake | 0.14 | 0.35 | 0 | 1 | 1 |
+| `nGear` | 5.2 | 1.8 | 0 | 8 | 8 |
 | DRS | 2.1 | 4.8 | 0 | 14 | 12 |
 
-*Exact values vary by run — regenerate with
-`python forensic/forensic_analysis.py`*
+**Verification note:** These are previously reported values, not independently reproduced results in this document. Recalculate them from the current dataset before citing them as measured project results. The exact values depend on data coverage, filtering, and the statistical method used.
 
----
+Reproducible results should be accompanied by a generated summary, script version or commit, and enough configuration detail to reproduce the same dataset.
 
-## Threshold Calibration
+## 6. Threshold calibration
 
-### Method
+### 6.1 Purpose
 
-`calibrate_thresholds.py` derives anomaly filter
-thresholds from the baseline statistics. Two
-approaches are combined:
+Threshold calibration converts baseline observations and domain constraints into parameters used by the runtime anomaly filter.
 
-**Statistical bounds:**
+The project documentation describes two categories:
+
+1. Statistical bounds derived from the baseline.
+2. Hard range checks intended to identify values outside configured limits.
+
+These categories should have different meanings in the implementation and in the resulting audit events.
+
+### 6.2 Statistical bounds
+
+The original methodology describes:
+
 ```python
 lower = max(physical_min, mean - 3 * std)
 upper = min(physical_max, mean + 3 * std)
 ```
 
-**Hard physical limits:**
+This is an illustrative rule. Confirm that the current calibration code uses this exact calculation and that the variables are valid for the relevant channel.
+
+A statistical bound indicates that a value is unusual relative to the chosen baseline. It does not necessarily indicate that the value is physically impossible.
+
+### 6.3 Candidate physical limits
+
+The original configuration notes include:
+
 ```python
 PHYSICAL_LIMITS = {
-    'Speed':    {'min': -5.0,  'max': 400},
-    'RPM':      {'min': 0,     'max': 16000},
-    'Throttle': {'min': 0,     'max': 100},
-    'Brake':    {'min': 0,     'max': 1},
-    'nGear':    {'min': 0,     'max': 8},
-    'DRS':      {'min': 0,     'max': 14},
+    "Speed":    {"min": -5.0, "max": 400},
+    "RPM":      {"min": 0,    "max": 16000},
+    "Throttle": {"min": 0,    "max": 100},
+    "Brake":    {"min": 0,    "max": 1},
+    "nGear":    {"min": 0,    "max": 8},
+    "DRS":      {"min": 0,    "max": 14},
 }
 ```
 
-Physical limits are hard — any violation is
-an immediate REJECT. Statistical bounds violations
-produce a FLAG (forwarded with annotation).
+Treat these as project-configured candidate limits, not independently established engineering or FIA limits. Confirm that the current `AnomalyFilter` uses these values and that the units and channel encodings match the input.
 
-### Why Speed Min = -5.0
+The binary interpretation of `Brake`, valid gear values, and the accepted DRS range should be verified against the actual source data and simulator schema.
 
-Real FastF1 telemetry contains slightly negative
-speed values (-0.04 to -0.06 km/h) for cars
-stationary or slowly rolling backwards in the
-pit lane. Setting `min = 0` would incorrectly
-reject legitimate pit lane data. Setting
-`min = -5.0` provides a small margin while
-still catching physically impossible values.
+### 6.4 Negative speed
 
-### Threshold Output Format
+The original analysis notes observed small negative speed values, around -0.04 to -0.06 km/h, and proposes a lower threshold of -5 km/h to avoid rejecting such samples.
+
+This is a project-specific tolerance, not proof that every negative speed value is valid. Investigate values outside the normal observed range and examine their context before classifying them.
+
+### 6.5 Decision semantics
+
+The original design distinguishes:
+
+- **REJECT:** A value violates a configured hard limit.
+- **FLAG:** A value falls outside a statistical bound but is not rejected solely for that reason.
+
+Verify the actual runtime implementation before claiming these semantics are enforced. The filter's code, configuration loading, and caller behaviour determine whether a flagged packet is forwarded, annotated, or rejected.
+
+The system should make rejection and flagging reasons explicit in its results and logs.
+
+## 7. Threshold output and runtime integration
+
+The original documentation describes a JSON threshold file containing team-specific channel bounds and a combined set of bounds.
+
+An illustrative shape is:
 
 ```json
 {
   "mercedes": {
-    "Speed":    {"lower": 0.0, "upper": 345.0},
-    "RPM":      {"lower": 0.0, "upper": 13500.0},
+    "Speed": {"lower": 0.0, "upper": 345.0},
+    "RPM": {"lower": 0.0, "upper": 13500.0},
     "Throttle": {"lower": 0.0, "upper": 100.0},
-    "Brake":    {"lower": 0.0, "upper": 1.0},
-    "nGear":    {"lower": 0.0, "upper": 8.0},
-    "DRS":      {"lower": 0.0, "upper": 14.0}
+    "Brake": {"lower": 0.0, "upper": 1.0},
+    "nGear": {"lower": 0.0, "upper": 8.0},
+    "DRS": {"lower": 0.0, "upper": 14.0}
   },
   "redbull": {
-    "Speed":    {"lower": 0.0, "upper": 340.0},
-    ...
+    "Speed": {"lower": 0.0, "upper": 340.0}
   },
-  "combined": {
-    ...
-  }
+  "combined": {}
 }
 ```
 
-Stored at `data/processed/thresholds.json`.
-Loaded at relay startup by `AnomalyFilter`.
+This is an abbreviated example, not a verified current output file. Regenerate the actual file and inspect its schema before using it as a reference.
 
----
+Verify all of the following:
 
-## Anomaly Detection Results
+- The calibration script writes to the documented location.
+- The runtime filter reads from that location.
+- Team names and channel names match between producer, calibration, and runtime code.
+- Missing or malformed thresholds cause a clear, safe outcome.
+- Default thresholds are documented if the file is absent.
+- Reload behaviour is defined if the file changes while the relay is running.
+- The runtime decision actually uses the loaded values.
 
-### Anomaly Categories Identified
+Do not assume that calibration and runtime detection are integrated merely because both components exist in the repository.
 
-From forensic analysis of 1,814,537 Mercedes frames:
+## 8. Anomaly results and interpretation
 
-**Physical anomalies (REJECT level):**
-These represent data quality issues in the
-raw FastF1 dataset — not security events:
-Speed > 400 km/h:    0 occurrences
-RPM > 16000:         0 occurrences
-nGear > 8:           0 occurrences
-Throttle > 100:      0 occurrences
-Real F1 data is clean — physical limits are
-never exceeded in the source data.
+### 8.1 Physical-range violations
 
-**Statistical anomalies (FLAG level):**
-Values beyond 3 standard deviations:
-Speed anomalies:     Pit lane entries/exits
-Safety car restarts
-Crash events
-RPM anomalies:       Engine failures
-Gear change hesitation
-Power unit modes
-Throttle anomalies:  Wheel spin events
-Sensor glitches
-Brake testing
-### Anomaly Count by Circuit
+The original notes report zero occurrences of the following values in the examined Mercedes dataset:
 
-Anomaly rates vary significantly by circuit
-characteristics:
-High anomaly circuits:
-Monaco         ← Low speed, frequent braking
-Singapore      ← Street circuit, walls
-Baku           ← Mixed speed, long straight
-Low anomaly circuits:
-Monza          ← High speed, smooth flow
-Silverstone    ← Fast corners, consistent
-Bahrain        ← Technical but predictable
----
+- Speed above 400 km/h.
+- RPM above 16,000.
+- Gear above 8.
+- Throttle above 100%.
 
-## Visualisations
+These counts require reproduction from the current dataset and should specify the exact filters, included sessions, and handling of missing or non-finite values.
 
-Five visualisations generated by
-`forensic/visualise_telemetry.py` and saved
-to `architecture/diagrams/`:
+Even if no such values occur in the source dataset, this does not prove that the detector can identify all malformed or adversarial telemetry.
 
-### 1. Speed Distribution (`speed_distribution.png`)
+### 8.2 Statistical anomalies
 
-Histogram of Speed values across all Mercedes
-sessions. Shows bimodal distribution — peak at
-0-50 km/h (pit lane) and 250-320 km/h (race pace).
-Long tail at 320-345 km/h (DRS straight).
+The original analysis associates unusual speed, RPM, throttle, and braking observations with events such as pit-lane transitions, safety-car restarts, engine behaviour, wheel spin, and sensor glitches.
 
-**Security relevance:** Establishes the valid
-speed range for anomaly filter thresholds.
-Values outside 3σ from race pace peak are flagged.
+These are plausible investigation hypotheses, not verified causal findings. A statistical outlier does not establish that a crash, engine failure, sensor fault, or security incident occurred.
 
-### 2. Throttle vs Speed (`throttle_vs_speed.png`)
+Where causal interpretation matters, correlate the observation with session context, adjacent samples, available timing data, and other evidence.
 
-Scatter plot of Throttle position vs Speed.
-Shows characteristic F1 pattern — high throttle
-at high speed (straights), zero throttle at
-low speed (braking zones), mixed at corners.
+### 8.3 Circuit-level anomaly rates
 
-**Security relevance:** Correlation pattern
-allows detection of physically implausible
-combinations — e.g., 100% throttle at 0 km/h
-for more than a brief period is suspicious.
+Circuit-specific distributions can differ substantially. For example, low-speed street circuits may exhibit different speed and braking patterns from circuits with long straights.
 
-### 3. Channel Statistics (`channel_statistics.png`)
+However, circuit rankings such as “high anomaly” and “low anomaly” must be based on computed rates and a documented denominator. They should not be treated as established findings without regenerated counts and plots.
 
-Box plots of all six telemetry channels with
-mean, quartiles, and outlier points marked.
-Visualises the statistical distribution used
-to compute anomaly thresholds.
+For meaningful comparisons, report at least:
 
-**Security relevance:** Shows the 1.5×IQR
-outlier boundary used as an alternative to
-3σ threshold for non-normal distributions
-(Brake is binary — not normally distributed).
+- Total samples per circuit.
+- Number of flagged samples per channel.
+- Flag rate and rejection rate.
+- Session types included.
+- Missing or excluded observations.
+- Threshold configuration and baseline version.
 
-### 4. Anomaly Counts (`anomaly_counts.png`)
+A spike in anomaly flags may indicate a changed operating condition, a configuration mismatch, a data-quality problem, or an attack. It is a signal for investigation, not a conclusion.
 
-Bar chart of anomaly frequency per channel per
-circuit. Shows that Speed anomalies are most
-common (pit lane transitions) and Throttle
-anomalies correlate with street circuits.
+## 9. Visualisations
 
-**Security relevance:** Baseline anomaly rate
-per circuit establishes what "normal unusual"
-looks like — a sudden spike in anomalies above
-the circuit baseline is a security signal.
+The original pipeline describes five visualisations. Their existence and current output should be checked against `forensic/visualise_telemetry.py` and the generated files.
 
-### 5. DRS Usage (`drs_usage.png`)
+### 9.1 Speed distribution
 
-DRS state encoding distribution and usage by
-circuit. Monaco has near-zero DRS usage (no
-detection zones), Monza has highest DRS usage
-(two long straights).
+**Intended purpose:** Show the distribution of speed samples and highlight possible multimodal behaviour, including low-speed and racing-speed periods.
 
-**Security relevance:** DRS values outside
-the circuit-specific expected range are
-suspicious — DRS state 14 on a Monaco sector
-with no DRS zone would be anomalous.
+**Security relevance:** Helps assess the suitability of global speed bounds and identify distribution shifts.
 
----
+**Limitation:** A histogram does not establish which samples are valid or malicious. Session context and data quality remain important.
 
-## Running the Forensic Pipeline
+### 9.2 Throttle versus speed
 
-### Prerequisites
+**Intended purpose:** Explore the relationship between throttle and speed.
+
+**Security relevance:** May help identify observations that deserve review when they are inconsistent with expected patterns.
+
+**Limitation:** A simple scatter plot does not account for every legitimate vehicle state, transient, gear, braking event, or sensor behaviour. Correlation should not be used as a hard rejection rule without a validated model.
+
+### 9.3 Channel statistics
+
+**Intended purpose:** Compare distributions across channels using descriptive plots such as box plots.
+
+**Security relevance:** Helps identify spread, skew, outliers, and differences between channels.
+
+**Limitation:** Box-plot outliers, including points beyond conventional 1.5×IQR whiskers, are statistical indicators. They are not automatically security incidents or physically impossible values.
+
+### 9.4 Anomaly counts
+
+**Intended purpose:** Compare flag or rejection counts by channel, circuit, or session.
+
+**Security relevance:** Helps monitor distribution changes and investigate unexpected increases in flags.
+
+**Limitation:** Counts must be normalised by the number of samples and interpreted against the relevant context. A larger dataset may naturally produce more flags even if the underlying rate is unchanged.
+
+### 9.5 DRS state distribution
+
+**Intended purpose:** Inspect DRS state values and compare observed distributions across circuits or sessions.
+
+**Security relevance:** Can help identify unexpected encodings or values that warrant investigation.
+
+**Limitation:** Circuit-specific rules must be supported by an accurate mapping of the session, track layout, applicable DRS configuration, and telemetry semantics. A DRS state should not be rejected solely because a general circuit assumption suggests it is unusual.
+
+## 10. Running the forensic workflow
+
+Commands below reflect the project paths described in the original documentation. Verify them against the current repository before relying on them.
+
+### 10.1 Install dependencies
+
+Activate the appropriate project virtual environment and install the dependencies declared by the repository.
+
+For example:
 
 ```bash
-# Activate virtual environment
-f1env\Scripts\activate.bat
-
-# Install dependencies
-pip install fastf1 pandas matplotlib --break-system-packages
+python -m pip install fastf1 pandas matplotlib
 ```
 
-### Step 1 — Fetch Telemetry
+Prefer a project-managed dependency file and virtual environment over global installation. Avoid adding `--break-system-packages` to ordinary setup instructions.
+
+### 10.2 Fetch telemetry
 
 ```bash
 python forensic/fetch_telemetry.py
-# Downloads all 56 CSV files to data/raw/
-# Takes 10-30 minutes depending on FastF1 cache
 ```
 
-### Step 2 — Compute Baselines
+The original notes describe downloading raw CSV files into `data/raw/`. Confirm the actual filenames, session coverage, and output directory from the script.
+
+### 10.3 Compute baselines
 
 ```bash
 python forensic/forensic_analysis.py
-# Reads data/raw/
-# Produces data/processed/mercedes_baseline.csv
-#           data/processed/redbull_baseline.csv
-#           data/processed/forensic_summary.json
 ```
 
-### Step 3 — Calibrate Thresholds
+The original notes describe outputs under `data/processed/`, including baseline files and a forensic summary. Confirm the exact names and schemas from the current implementation.
+
+### 10.4 Calibrate thresholds
 
 ```bash
 python forensic/calibrate_thresholds.py
-# Reads baselines
-# Produces data/processed/thresholds.json
 ```
 
-### Step 4 — Generate Visualisations
+Inspect the generated threshold file and verify that the values and grouping keys are correct.
+
+### 10.5 Generate visualisations
 
 ```bash
 python forensic/visualise_telemetry.py
-# Reads baselines
-# Produces architecture/diagrams/*.png
 ```
 
-### Step 5 — Verify Thresholds Loaded
+Confirm the output paths and inspect the generated images rather than assuming the script completed successfully.
+
+### 10.6 Verify runtime integration
+
+Inspect and test:
 
 ```bash
 python relay-node/src/anomaly_filters.py
-# Should print:
-#   [AnomalyFilter] Thresholds loaded for: ['mercedes', 'redbull']
 ```
 
----
+This command may exercise or display the filter's loading behaviour, depending on the module implementation. It does not, by itself, prove that a running relay uses the generated thresholds.
 
-## Forensic Files — Gitignore Status
+For integration verification, run the intended relay test or simulation with known input packets and confirm the observed decision for values inside and outside configured bounds.
 
-The following files are gitignored due to size:
-data/raw/.csv              ← 56 files, ~25MB each
-data/processed/_baseline.csv ← 380-413MB each
-data/processed/thresholds.json ← Regenerated from baselines
-data/anomalies/*.csv        ← Anomaly detection output
-**To regenerate after fresh clone:**
-```bash
-python forensic/fetch_telemetry.py
-python forensic/forensic_analysis.py
-python forensic/calibrate_thresholds.py
-```
+## 11. Data storage and reproducibility
 
-This takes approximately 15-45 minutes depending
-on FastF1 cache state and internet connection.
+The original project notes state that raw telemetry, processed baselines, threshold files, and anomaly outputs may be excluded from version control because of their size or regeneration strategy.
 
----
+Check the current `.gitignore` and repository state before relying on that description.
 
-## Forensic Findings Relevant to Security
+A reproducible analysis should record:
 
-### Finding 1 — Negative Speed is Legitimate
+- Source and session identifiers.
+- Data retrieval date.
+- FastF1 and Python versions.
+- Analysis code revision.
+- Channel list and units.
+- Data-cleaning rules.
+- Baseline grouping method.
+- Threshold configuration.
+- Row counts and missing-value summaries.
+- Output file names and generation results.
 
-Discovery: Real F1 telemetry contains Speed = -0.04
-to -0.06 km/h. Setting physical minimum to 0 would
-produce false positives in the anomaly filter.
+If large datasets are not stored in the repository, provide clear regeneration instructions and retain a small, non-sensitive test fixture for automated tests.
 
-**Impact:** Physical limit set to -5.0 km/h.
-Documented in `relay-node/src/anomaly_filters.py`
-PHYSICAL_LIMITS.
+Do not include credentials, private keys, or other secrets in data archives or reproducibility artifacts.
 
-### Finding 2 — DRS is Not Boolean
+## 12. Forensic interpretation and evidence limitations
 
-Discovery: FastF1 DRS channel encodes state as
-integer 0-14, not a simple open/closed boolean.
+PitCrypt-F1's forensic analysis is exploratory telemetry analysis. It should not be confused with a complete digital-forensics process or a legally defensible chain of custody.
 
-**Impact:** PHYSICAL_LIMITS DRS max set to 14.
-DRS threshold calibrated against observed values,
-not assumed 0/1 range.
+Statistical baselines and visualisations do not independently prove:
 
-### Finding 3 — Session Affects Distribution
+- Who generated a packet.
+- Whether a telemetry value is truthful.
+- Whether a system was compromised.
+- Whether a driver or team violated a regulation.
+- Whether evidence has remained unchanged since acquisition.
 
-Discovery: Qualifying sessions have different
-speed distributions than Race sessions — Q1/Q2/Q3
-have outlap/inlap low-speed phases that Race
-does not.
+Those conclusions require appropriate provenance, authenticated records, validated tools, context, and corroborating evidence.
 
-**Impact:** `SensorSimulator` allows session
-selection. Thresholds should ideally be
-session-specific in production.
+Where data is used in a security investigation, preserve the source files, record their origin and acquisition time, document transformations, and maintain hashes or other integrity records where appropriate. A hash supports later integrity checking only when the reference hash and its provenance are adequately protected.
 
-### Finding 4 — São Paulo Sprint Data
+## 13. Findings and follow-up work
 
-Discovery: São Paulo 2025 had both a Sprint
-Qualifying and Sprint Race session, contributing
-two additional CSV files with distinct
-distribution characteristics.
+The original project notes identify several useful engineering observations:
 
-**Impact:** Sprint sessions included in baseline
-computation. `SensorSimulator` correctly handles
-Sprint session type.
+1. **Small negative speed values:** Investigate source context before choosing lower bounds; avoid arbitrary rejection of legitimate samples.
+2. **DRS encoding:** Preserve the actual source representation rather than assuming a Boolean channel.
+3. **Session-dependent distributions:** Evaluate whether separate baselines are appropriate for race, qualifying, and sprint sessions.
+4. **Sprint coverage:** Confirm which sprint-related sessions were actually fetched and included in each baseline.
+5. **Threshold integration:** Test that calibrated values reach the active runtime filter and produce the intended decisions.
 
----
+Recommended next steps:
 
-## See Also
+- Reproduce and version the reported statistics.
+- Add automated tests for missing values, non-finite values, boundary conditions, and unexpected channel encodings.
+- Evaluate false-positive and false-negative behaviour using labelled or deliberately constructed test cases.
+- Separate statistical flags from hard validation failures in reports.
+- Add per-circuit and per-session evaluation where the dataset supports it.
+- Record threshold provenance so runtime decisions can be traced to the configuration that produced them.
 
-- `forensic/fetch_telemetry.py` — Data acquisition
-- `forensic/forensic_analysis.py` — Baseline computation
-- `forensic/calibrate_thresholds.py` — Threshold derivation
-- `forensic/visualise_telemetry.py` — Plot generation
-- `relay-node/src/anomaly_filters.py` — Runtime detection
-- `docs/FIA_DATA_PRIVACY_MODEL.md` — Data privacy handling
-- `architecture/diagrams/` — Generated visualisations
+## 14. Related documents and code
+
+- `forensic/fetch_telemetry.py` — Data acquisition, if present.
+- `forensic/forensic_analysis.py` — Baseline computation, if present.
+- `forensic/calibrate_thresholds.py` — Threshold derivation, if present.
+- `forensic/visualise_telemetry.py` — Plot generation, if present.
+- `relay-node/src/anomaly_filters.py` — Runtime anomaly filtering.
+- `docs/FIA_DATA_PRIVACY_MODEL.md` — Data privacy model.
+- `docs/THREAT_MODEL.md` — Threat analysis.
+- `architecture/diagrams/` — Generated visualisations, if present.
+
+Update this document when the analysis pipeline, source coverage, channel definitions, calibration logic, or runtime integration changes. Keep reported results separate from unverified observations and regenerate numerical claims when the underlying data or code changes.
